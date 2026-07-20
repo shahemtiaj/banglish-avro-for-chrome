@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { TryDemo } from "@/components/TryDemo";
 
 export const Route = createFileRoute("/")({
   component: Landing,
@@ -118,23 +119,7 @@ function Landing() {
                     <span className="h-3 w-3 rounded-full bg-[#00CA4E]" />
                     <span className="ml-3 text-xs text-muted-foreground">any editable field on any website</span>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
-                    <div>
-                      <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">You type</p>
-                      <div className="rounded-xl border border-border bg-muted/40 px-4 py-3 font-mono text-base">
-                        ami bangla likhchi
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-widest text-muted-foreground mb-2">You get</p>
-                      <div
-                        className="rounded-xl px-4 py-3 text-2xl text-white"
-                        style={{ background: "linear-gradient(135deg, #FF9F1C, #FFC857)", fontFamily: "'Noto Sans Bengali', sans-serif" }}
-                      >
-                        আমি বাংলা লিখছি
-                      </div>
-                    </div>
-                  </div>
+                  <TryDemo />
                 </div>
               </div>
             </div>
