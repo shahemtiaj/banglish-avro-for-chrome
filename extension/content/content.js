@@ -363,8 +363,6 @@
     let rect;
     if (target.tagName === "TEXTAREA" || target.tagName === "INPUT") {
       rect = target.getBoundingClientRect();
-      panelListEl.style.left = rect.left + "px";
-      panelListEl.style.top = (rect.bottom + 6) + "px";
     } else {
       const sel = window.getSelection();
       if (sel && sel.rangeCount) {
@@ -373,9 +371,24 @@
       } else {
         rect = target.getBoundingClientRect();
       }
-      panelListEl.style.left = rect.left + "px";
-      panelListEl.style.top = (rect.bottom + 6) + "px";
     }
+    // Measure panel then flip/shift to stay inside viewport
+    panelListEl.style.left = "-9999px";
+    panelListEl.style.top = "0px";
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const pw = panelListEl.offsetWidth || 240;
+    const ph = panelListEl.offsetHeight || 200;
+    const gap = 6;
+    let top = rect.bottom + gap;
+    if (top + ph > vh - 8) {
+      const above = rect.top - gap - ph;
+      top = above >= 8 ? above : Math.max(8, vh - ph - 8);
+    }
+    let left = rect.left;
+    if (left + pw > vw - 8) left = Math.max(8, vw - pw - 8);
+    if (left < 8) left = 8;
+    panelListEl.style.left = left + "px";
+    panelListEl.style.top = top + "px";
   }
 
   function hidePanel() {
