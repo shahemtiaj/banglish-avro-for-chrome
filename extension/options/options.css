@@ -1,0 +1,73 @@
+.app {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+}
+
+.sidebar {
+  padding: 24px 16px;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  position: sticky; top: 0; height: 100vh;
+  display: flex; flex-direction: column; gap: 20px;
+}
+.brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px; }
+.nav { display: flex; flex-direction: column; gap: 2px; }
+.nav-item {
+  border: 0; background: transparent; color: var(--text);
+  text-align: left; padding: 10px 12px; border-radius: 10px;
+  font: 500 13px/1 "Inter", sans-serif; cursor: pointer;
+  transition: background 140ms var(--spring);
+}
+.nav-item:hover { background: var(--surface-2); }
+.nav-item.active {
+  background: var(--gradient); color: #fff;
+  box-shadow: 0 4px 12px rgba(255,159,28,0.3);
+}
+
+.main {
+  padding: 32px 40px 60px;
+  max-width: 820px;
+}
+.section { display: none; animation: fade 220ms var(--spring); }
+.section.active { display: block; }
+@keyframes fade {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.section-head { margin-bottom: 18px; }
+.section-head h2 { font-size: 22px; }
+.section-head p { margin-top: 4px; }
+
+.card + .card { margin-top: 16px; }
+
+.try-card { padding: 14px; }
+.try-card .card-head { display: flex; justify-content: space-between; margin-bottom: 8px; }
+.try-card textarea { width: 100%; resize: vertical; font: 15px/1.5 "Noto Sans Bengali", "Inter", sans-serif; }
+
+.dict-list { max-height: 420px; overflow: auto; }
+.dict-row {
+  display: grid; grid-template-columns: 1fr 1fr auto;
+  gap: 12px; padding: 10px 14px; align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+.dict-row:last-child { border-bottom: 0; }
+.dict-row .bn { font-family: "Noto Sans Bengali", sans-serif; }
+
+.stat-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+  margin-bottom: 16px;
+}
+.stat { padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+.stat-label { color: var(--text-muted); font-size: 12px; }
+.stat strong { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; }
+
+.about-card { padding: 20px; }
+
+@media (max-width: 720px) {
+  .app { grid-template-columns: 1fr; }
+  .sidebar { position: static; height: auto; flex-direction: row; overflow-x: auto; gap: 12px; }
+  .nav { flex-direction: row; }
+  .main { padding: 20px; }
+  .stat-grid { grid-template-columns: repeat(2, 1fr); }
+}

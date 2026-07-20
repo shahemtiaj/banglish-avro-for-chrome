@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SE Banglish Avro — Settings</title>
+    <link rel="stylesheet" href="../styles/common.css" />
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-logo" aria-hidden="true">অ</span>
+          <div class="stack">
+            <strong>SE Banglish Avro</strong>
+            <span class="small muted">Settings</span>
+          </div>
+        </div>
+        <nav class="nav" role="tablist">
+          <button class="nav-item active" data-section="general" role="tab" aria-selected="true">General</button>
+          <button class="nav-item" data-section="typing" role="tab">Typing</button>
+          <button class="nav-item" data-section="dictionary" role="tab">Dictionary</button>
+          <button class="nav-item" data-section="appearance" role="tab">Appearance</button>
+          <button class="nav-item" data-section="shortcuts" role="tab">Shortcuts</button>
+          <button class="nav-item" data-section="backup" role="tab">Backup</button>
+          <button class="nav-item" data-section="stats" role="tab">Statistics</button>
+          <button class="nav-item" data-section="about" role="tab">About</button>
+        </nav>
+      </aside>
+
+      <main class="main">
+        <section id="section-general" class="section active">
+          <header class="section-head">
+            <h2>General</h2>
+            <p>Core behavior of the extension.</p>
+          </header>
+          <div class="card">
+            <div class="row">
+              <div class="row-label"><span class="label">Enable extension</span><span class="hint">Turn all Bangla typing on or off</span></div>
+              <label class="switch"><input type="checkbox" data-setting="enabled"/><span class="track"><span class="thumb"></span></span></label>
+            </div>
+            <div class="row">
+              <div class="row-label"><span class="label">Language</span><span class="hint">Choose the active input language</span></div>
+              <div class="segmented primary" data-setting-group="language">
+                <button data-value="bn">বাংলা</button>
+                <button data-value="en">English</button>
+              </div>
+            </div>
+            <div class="row">
+              <div class="row-label"><span class="label">Remember last language</span><span class="hint">Restore last mode when opening new tabs</span></div>
+              <label class="switch"><input type="checkbox" data-setting="rememberLastLanguage"/><span class="track"><span class="thumb"></span></span></label>
+            </div>
+            <div class="row">
+              <div class="row-label"><span class="label">Floating status indicator</span><span class="hint">Show a small pill on the page when language changes</span></div>
+              <label class="switch"><input type="checkbox" data-setting="floatingIndicator"/><span class="track"><span class="thumb"></span></span></label>
+            </div>
+          </div>
+        </section>
+
+        <section id="section-typing" class="section">
+          <header class="section-head">
+            <h2>Typing</h2>
+            <p>Fine-tune the phonetic engine and suggestions.</p>
+          </header>
+          <div class="card">
+            <div class="row">
+              <div class="row-label"><span class="label">Candidate window</span><span class="hint">Live suggestion popup while typing</span></div>
+              <label class="switch"><input type="checkbox" data-setting="candidateWindow"/><span class="track"><span class="thumb"></span></span></label>
+            </div>
+            <div class="row">
+              <div class="row-label"><span class="label">Auto correction</span><span class="hint">Use the dictionary to fix common typos</span></div>
+              <label class="switch"><input type="checkbox" data-setting="autoCorrect"/><span class="track"><span class="thumb"></span></span></label>
+            </div>
+            <div class="row">
+              <div class="row-label"><span class="label">Auto space</span><span class="hint">Automatically add a space after each committed word</span></div>
+              <label class="switch"><input type="checkbox" data-setting="autoSpace"/><span class="track"><span class="thumb"></span></span></label>
+            </div>
+            <div class="row">
+              <div class="row-label"><span class="label">Layout</span><span class="hint">Phonetic keyboard layout in use</span></div>
+              <select data-setting="layout">
+                <option value="avro">Avro (Phonetic)</option>
+                <option value="probhat" disabled>Probhat (coming soon)</option>
+                <option value="national" disabled>National (coming soon)</option>
+                <option value="ridmik" disabled>Ridmik (coming soon)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="card try-card">
+            <div class="card-head">
+              <strong>Try it</strong>
+              <span class="small muted">Type Banglish and press space</span>
+            </div>
+            <textarea id="try-input" rows="3" placeholder="ami banglay likhchi..."></textarea>
+          </div>
+        </section>
+
+        <section id="section-dictionary" class="section">
+          <header class="section-head">
+            <h2>Dictionary</h2>
+            <p>Add your own Banglish → Bangla mappings for names, brands, and slang.</p>
+          </header>
+          <div class="card">
+            <div class="row">
+              <input type="text" id="dict-key" placeholder="Banglish (e.g. rakib)" />
+              <input type="text" id="dict-val" placeholder="বাংলা (e.g. রাকিব)" />
+              <button class="btn primary" id="dict-add">Add</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="dict-list" id="dict-list"></div>
+          </div>
+        </section>
+
+        <section id="section-appearance" class="section">
+          <header class="section-head">
+            <h2>Appearance</h2>
+            <p>Match your system theme or force a mode.</p>
+          </header>
+          <div class="card">
+            <div class="row">
+              <div class="row-label"><span class="label">Theme</span><span class="hint">Light, dark, or match the system</span></div>
+              <div class="segmented" data-setting-group="theme">
+                <button data-value="light">Light</button>
+                <button data-value="dark">Dark</button>
+                <button data-value="system">System</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="section-shortcuts" class="section">
+          <header class="section-head">
+            <h2>Shortcuts</h2>
+            <p>Manage keyboard shortcuts from Chrome's shortcuts page.</p>
+          </header>
+          <div class="card">
+            <div class="row">
+              <div class="row-label"><span class="label">Toggle Bangla / English</span><span class="hint">Default: Ctrl + Space</span></div>
+              <button class="btn" id="open-shortcuts">Manage in Chrome</button>
+            </div>
+            <div class="row">
+              <div class="row-label"><span class="label">Open popup</span><span class="hint">Default: Ctrl + Shift + B</span></div>
+              <button class="btn" id="open-shortcuts-2">Manage in Chrome</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="section-backup" class="section">
+          <header class="section-head">
+            <h2>Backup</h2>
+            <p>Export your settings and dictionary, or import from a previous backup.</p>
+          </header>
+          <div class="card">
+            <div class="row">
+              <div class="row-label"><span class="label">Export settings</span><span class="hint">Download a JSON file with your configuration</span></div>
+              <button class="btn" id="export-btn">Export</button>
+            </div>
+            <div class="row">
+              <div class="row-label"><span class="label">Import settings</span><span class="hint">Restore from a previously exported file</span></div>
+              <label class="btn" for="import-file">Import
+                <input type="file" id="import-file" accept="application/json" hidden />
+              </label>
+            </div>
+            <div class="row">
+              <div class="row-label"><span class="label">Reset to defaults</span><span class="hint">Restore initial settings (dictionary is preserved)</span></div>
+              <button class="btn danger" id="reset-btn">Reset</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="section-stats" class="section">
+          <header class="section-head">
+            <h2>Statistics</h2>
+            <p>A quick look at your typing activity.</p>
+          </header>
+          <div class="stat-grid">
+            <div class="card stat"><span class="stat-label">Words typed</span><strong id="stat-words">0</strong></div>
+            <div class="card stat"><span class="stat-label">Characters</span><strong id="stat-chars">0</strong></div>
+            <div class="card stat"><span class="stat-label">Bangla words</span><strong id="stat-bn">0</strong></div>
+            <div class="card stat"><span class="stat-label">English words</span><strong id="stat-en">0</strong></div>
+          </div>
+          <div class="card">
+            <div class="row">
+              <div class="row-label"><span class="label">Most used language</span><span class="hint">Based on your typing history</span></div>
+              <strong id="stat-mostused">—</strong>
+            </div>
+          </div>
+        </section>
+
+        <section id="section-about" class="section">
+          <header class="section-head">
+            <h2>About</h2>
+            <p>SE Banglish Avro for Chrome</p>
+          </header>
+          <div class="card about-card">
+            <div class="hstack" style="gap:14px">
+              <span class="brand-logo" style="width:52px;height:52px;font-size:26px" aria-hidden="true">অ</span>
+              <div class="stack">
+                <strong style="font-size:16px">SE Banglish Avro</strong>
+                <span class="small muted">Version 1.0.0</span>
+              </div>
+            </div>
+            <p style="margin-top:12px">
+              A fast, minimal Avro-style phonetic Bangla typing extension. Type English letters and get beautiful Bangla text anywhere on the web.
+            </p>
+            <div class="hstack" style="margin-top:14px; gap:8px">
+              <a class="btn" href="https://github.com/" target="_blank" rel="noopener">GitHub</a>
+              <a class="btn" href="https://en.wikipedia.org/wiki/Avro_Keyboard" target="_blank" rel="noopener">About Avro</a>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="options.js" type="module"></script>
+  </body>
+</html>

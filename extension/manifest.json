@@ -1,0 +1,61 @@
+{
+  "manifest_version": 3,
+  "name": "SE Banglish Avro for Chrome",
+  "short_name": "SE Banglish",
+  "version": "1.0.0",
+  "description": "Type Bangla anywhere on the web with Avro-style phonetic transliteration. Fast, minimal, Apple-inspired.",
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    },
+    "default_title": "SE Banglish Avro"
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "permissions": ["storage", "contextMenus", "activeTab"],
+  "web_accessible_resources": [
+    {
+      "resources": ["dictionary/core.json", "icons/*.png"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "commands": {
+    "toggle-banglish": {
+      "suggested_key": {
+        "default": "Ctrl+Space",
+        "mac": "MacCtrl+Space"
+      },
+      "description": "Toggle Bangla / English typing"
+    },
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+B",
+        "mac": "Command+Shift+B"
+      }
+    }
+  }
+}
