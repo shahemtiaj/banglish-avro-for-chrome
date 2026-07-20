@@ -62,6 +62,21 @@
     "R": "ড়", "Y": "য়", "w": "ওয়",
     "ng": "ং",
   };
+  // Special conjuncts (juktakkhor) — checked before generic consonants.
+  // Each maps a Banglish cluster to the exact Bangla ligature.
+  const CLUSTERS = {
+    "kkh": "ক্ষ", "ksh": "ক্ষ", "kSh": "ক্ষ",
+    "kkho": "ক্ষ", "kkha": "ক্ষা",
+    "jNG": "জ্ঞ", "gg": "জ্ঞ", "gy": "জ্ঞ",
+    "hm": "হ্ম", "hn": "হ্ন", "hN": "হ্ণ",
+    "ttw": "ত্ত্ব", "ttv": "ত্ত্ব",
+    "shch": "শ্চ", "shchh": "শ্ছ",
+    "nch": "ঞ্চ", "nj": "ঞ্জ", "nD": "ণ্ড",
+    "shT": "ষ্ট", "shTh": "ষ্ঠ",
+    "sht": "স্ত", "shth": "স্থ",
+    "shn": "ষ্ণ",
+    "ngg": "ঙ্গ", "ngk": "ঙ্ক", "ngkh": "ঙ্খ",
+  };
   const VOWELS = {
     "rri": { ind: "ঋ", kar: "ৃ" },
     "OI":  { ind: "ঐ", kar: "ৈ" },
@@ -90,6 +105,7 @@
   const TOKENS = [
     ...Object.keys(VOWELS),
     ...Object.keys(CONSONANTS),
+    ...Object.keys(CLUSTERS),
     ...Object.keys(SYMBOLS),
     "rr",
     "r",
@@ -118,6 +134,15 @@
         continue;
       }
       i += matched.length;
+      if (CLUSTERS[matched]) {
+        const g = CLUSTERS[matched];
+        // If cluster starts with a vowel kar we cannot join to prev; safe by design (all clusters start with a consonant).
+        out += (prev === "consonant") ? "্" + g : g;
+        // If cluster ends with a kar (contains া, ে, etc. at tail) treat as vowel-terminated
+        const last = g[g.length - 1];
+        prev = /[\u09BE-\u09CC\u09D7]/.test(last) ? "vowel" : "consonant";
+        continue;
+      }
       if (matched === "rr") {
         // reph — if followed by a consonant token, emit র্ and skip auto-hasanta on next
         out += "র্";
