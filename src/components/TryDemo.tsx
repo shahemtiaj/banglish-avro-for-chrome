@@ -17,7 +17,7 @@ export function TryDemo() {
   }, [value, caret]);
 
   const items = useMemo(() => (word ? suggest(word) : []), [word]);
-  const showPanel = focused && items.length > 0 && word.length > 0;
+  const showPanel = focused && items.length > 0 && word.length > 0 && /[A-Za-z]/.test(word);
 
   useEffect(() => { setActive(0); }, [word]);
 
@@ -33,23 +33,39 @@ export function TryDemo() {
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (showPanel) {
+    // Read live from the DOM so we don't fight React's async state.
+    const el = e.currentTarget;
+    const curVal = el.value;
+    const curPos = el.selectionStart ?? curVal.length;
+    let s = curPos;
+    while (s > 0 && LATIN.test(curVal[s - 1] ?? "")) s--;
+    const curWord = curVal.slice(s, curPos);
+    const curItems = curWord && /[A-Za-z]/.test(curWord) ? suggest(curWord) : [];
+
+    if (curItems.length > 0) {
       if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => (a + 1) % items.length); return; }
       if (e.key === "ArrowUp")   { e.preventDefault(); setActive((a) => (a - 1 + items.length) % items.length); return; }
-      if (e.key === "Tab")       { e.preventDefault(); commit(items[active]); return; }
-      if (e.key === "Enter")     { e.preventDefault(); commit(items[active]); return; }
+      if (e.key === "Tab" || e.key === "Enter") {
+        e.preventDefault();
+        const pick = curItems[active] ?? curItems[0];
+        const next = curVal.slice(0, s) + pick + curVal.slice(curPos);
+        setValue(next);
+        const pos = s + pick.length;
+        requestAnimationFrame(() => { el.setSelectionRange(pos, pos); setCaret(pos); });
+        return;
+      }
       if (e.key === "Escape")    { e.preventDefault(); setFocused(false); (e.target as HTMLInputElement).blur(); return; }
     }
     if (e.key === " " || /^[.,!?;:।]$/.test(e.key)) {
-      if (word && /[A-Za-z]/.test(word)) {
-        const bn = transliterate(word);
-        if (bn && bn !== word) {
+      if (curWord && /[A-Za-z]/.test(curWord)) {
+        const bn = transliterate(curWord);
+        if (bn && bn !== curWord) {
           e.preventDefault();
-          const next = value.slice(0, start) + bn + e.key + value.slice(caret);
+          const next = curVal.slice(0, s) + bn + e.key + curVal.slice(curPos);
           setValue(next);
-          const pos = start + bn.length + 1;
+          const pos = s + bn.length + 1;
           requestAnimationFrame(() => {
-            inputRef.current?.setSelectionRange(pos, pos);
+            el.setSelectionRange(pos, pos);
             setCaret(pos);
           });
         }
