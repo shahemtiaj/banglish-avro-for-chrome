@@ -70,8 +70,4 @@ document.addEventListener("DOMContentLoaded", () => {
     btn.addEventListener("click", () => update({ theme: btn.dataset.theme }));
   });
   $("#open-options").addEventListener("click", () => chrome.runtime.openOptionsPage());
-  $("#privacy-link").addEventListener("click", (e) => {
-    e.preventDefault();
-    chrome.runtime.openOptionsPage();
-  });
 });
