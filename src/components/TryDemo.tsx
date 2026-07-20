@@ -8,7 +8,9 @@ export function TryDemo() {
   const [caret, setCaret] = useState(0);
   const [active, setActive] = useState(0);
   const [focused, setFocused] = useState(false);
+  const [flipUp, setFlipUp] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const { word, start } = useMemo(() => {
     let s = caret;
@@ -20,6 +22,17 @@ export function TryDemo() {
   const showPanel = focused && items.length > 0 && word.length > 0 && /[A-Za-z]/.test(word);
 
   useEffect(() => { setActive(0); }, [word]);
+
+  useEffect(() => {
+    if (!showPanel) return;
+    const input = inputRef.current;
+    const panel = panelRef.current;
+    if (!input || !panel) return;
+    const rect = input.getBoundingClientRect();
+    const ph = panel.offsetHeight || 220;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    setFlipUp(spaceBelow < ph + 20 && rect.top > ph + 20);
+  }, [showPanel, items.length]);
 
   const commit = (choice: string) => {
     const next = value.slice(0, start) + choice + value.slice(caret);
@@ -57,18 +70,27 @@ export function TryDemo() {
       if (e.key === "Escape")    { e.preventDefault(); setFocused(false); (e.target as HTMLInputElement).blur(); return; }
     }
     if (e.key === " " || /^[.,!?;:।]$/.test(e.key)) {
+      const punct = e.key === "." ? "।" : e.key;
       if (curWord && /[A-Za-z]/.test(curWord)) {
         const bn = transliterate(curWord);
         if (bn && bn !== curWord) {
           e.preventDefault();
-          const next = curVal.slice(0, s) + bn + e.key + curVal.slice(curPos);
+          const next = curVal.slice(0, s) + bn + punct + curVal.slice(curPos);
           setValue(next);
           const pos = s + bn.length + 1;
           requestAnimationFrame(() => {
             el.setSelectionRange(pos, pos);
             setCaret(pos);
           });
+          return;
         }
+      }
+      if (e.key === ".") {
+        e.preventDefault();
+        const next = curVal.slice(0, curPos) + "।" + curVal.slice(curPos);
+        setValue(next);
+        const pos = curPos + 1;
+        requestAnimationFrame(() => { el.setSelectionRange(pos, pos); setCaret(pos); });
       }
     }
   };
@@ -101,8 +123,9 @@ export function TryDemo() {
       />
       {showPanel && (
         <div
+          ref={panelRef}
           role="listbox"
-          className="absolute left-0 right-auto top-full mt-2 z-30 min-w-[220px] max-w-[320px] rounded-2xl border border-border bg-background/95 backdrop-blur-xl p-1.5 shadow-2xl"
+          className={`absolute left-0 right-auto z-30 min-w-[220px] max-w-[320px] rounded-2xl border border-border bg-background/95 backdrop-blur-xl p-1.5 shadow-2xl ${flipUp ? "bottom-full mb-2" : "top-full mt-2"}`}
           style={{ boxShadow: "0 20px 40px rgba(0,0,0,0.12), 0 4px 12px rgba(0,0,0,0.06)" }}
         >
           {items.map((txt, i) => (

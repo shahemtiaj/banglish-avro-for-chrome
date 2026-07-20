@@ -79,6 +79,13 @@ const VOWELS: Record<string, Vowel> = {
   O: { ind: "ও", kar: "ো" }, o: { ind: "অ", kar: "" },
 };
 const SYMBOLS: Record<string, string> = { "^": "ঁ", ":": "ঃ" };
+const PUNCT_MAP: Record<string, string> = { ".": "।" };
+// Letters that are case-insensitive (uppercase should behave like lowercase).
+// We DO NOT normalize A,I,U,E,O,T,D,N,R,S,Y — those uppercase forms carry meaning.
+const CASE_INSENSITIVE = /[JCKGBPMLHFVWZ]/g;
+function normalizeCase(s: string): string {
+  return s.replace(CASE_INSENSITIVE, (c) => c.toLowerCase());
+}
 const TOKENS = [
   ...Object.keys(VOWELS),
   ...Object.keys(CONSONANTS),
@@ -92,13 +99,19 @@ export function transliterate(latin: string): string {
   if (!latin) return "";
   const key = latin.toLowerCase();
   if (dictionary[key]) return dictionary[key];
+  latin = normalizeCase(latin);
   let i = 0;
   let out = "";
   let prev: "start" | "consonant" | "vowel" | "ref" | "other" = "start";
   while (i < latin.length) {
     let m: string | null = null;
     for (const t of TOKENS) if (latin.startsWith(t, i)) { m = t; break; }
-    if (!m) { out += latin[i++]; prev = "other"; continue; }
+    if (!m) {
+      const ch = latin[i++];
+      out += PUNCT_MAP[ch] ?? ch;
+      prev = "other";
+      continue;
+    }
     i += m.length;
     if (CLUSTERS[m]) {
       const g = CLUSTERS[m];

@@ -116,6 +116,9 @@
     "^": "ঁ",
     ":": "ঃ",
   };
+  const PUNCT_MAP = { ".": "।" };
+  const CASE_INSENSITIVE = /[JCKGBPMLHFVWZ]/g;
+  function normalizeCase(s) { return s.replace(CASE_INSENSITIVE, (c) => c.toLowerCase()); }
   // Special: "rr" before consonant = reph (র্)
   const TOKENS = [
     ...Object.keys(VOWELS),
@@ -134,7 +137,7 @@
     const key = latin.toLowerCase();
     if (settings.customDictionary && settings.customDictionary[key]) return settings.customDictionary[key];
     if (dictionary[key]) return dictionary[key];
-
+    latin = normalizeCase(latin);
     let i = 0, out = "", prev = "start";
     while (i < latin.length) {
       let matched = null;
@@ -144,6 +147,7 @@
       if (!matched) {
         const ch = latin[i];
         if (DIGIT_MAP[ch]) { out += DIGIT_MAP[ch]; prev = "other"; }
+        else if (PUNCT_MAP[ch]) { out += PUNCT_MAP[ch]; prev = "other"; }
         else { out += ch; prev = "other"; }
         i++;
         continue;
@@ -359,8 +363,6 @@
     let rect;
     if (target.tagName === "TEXTAREA" || target.tagName === "INPUT") {
       rect = target.getBoundingClientRect();
-      panelListEl.style.left = rect.left + "px";
-      panelListEl.style.top = (rect.bottom + 6) + "px";
     } else {
       const sel = window.getSelection();
       if (sel && sel.rangeCount) {
@@ -369,9 +371,24 @@
       } else {
         rect = target.getBoundingClientRect();
       }
-      panelListEl.style.left = rect.left + "px";
-      panelListEl.style.top = (rect.bottom + 6) + "px";
     }
+    // Measure panel then flip/shift to stay inside viewport
+    panelListEl.style.left = "-9999px";
+    panelListEl.style.top = "0px";
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const pw = panelListEl.offsetWidth || 240;
+    const ph = panelListEl.offsetHeight || 200;
+    const gap = 6;
+    let top = rect.bottom + gap;
+    if (top + ph > vh - 8) {
+      const above = rect.top - gap - ph;
+      top = above >= 8 ? above : Math.max(8, vh - ph - 8);
+    }
+    let left = rect.left;
+    if (left + pw > vw - 8) left = Math.max(8, vw - pw - 8);
+    if (left < 8) left = 8;
+    panelListEl.style.left = left + "px";
+    panelListEl.style.top = top + "px";
   }
 
   function hidePanel() {
@@ -444,9 +461,38 @@
           updateStats(bn);
         }
       }
+      // Map "." to Bangla dari "।"
+      if (e.key === ".") {
+        e.preventDefault();
+        insertAtCaret(el, "।");
+      }
       hidePanel();
     }
   }, true);
+
+  function insertAtCaret(el, str) {
+    if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
+      const val = el.value;
+      const pos = el.selectionStart ?? val.length;
+      el.value = val.slice(0, pos) + str + val.slice(el.selectionEnd ?? pos);
+      const c = pos + str.length;
+      el.setSelectionRange(c, c);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    const node = document.createTextNode(str);
+    range.insertNode(node);
+    const r = document.createRange();
+    r.setStart(node, node.length);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }
 
   document.addEventListener("input", (e) => {
     if (!settings.enabled || settings.language !== "bn") return;
