@@ -3,7 +3,7 @@ import dictJson from "./bn-dictionary.json";
 const dictionary = dictJson as Record<string, string>;
 
 const CONSONANTS: Record<string, string> = {
-  kh: "খ", gh: "ঘ", Ng: "ঙ", ch: "চ", jh: "ঝ", NG: "ঞ",
+  kh: "খ", gh: "ঘ", Ng: "ঙ", chh: "ছ", ch: "ছ", jh: "ঝ", NG: "ঞ",
   Th: "ঠ", Dh: "ঢ", th: "থ", dh: "ধ", ph: "ফ", bh: "ভ",
   sh: "শ", Sh: "ষ", ss: "স", Rh: "ঢ়",
   k: "ক", g: "গ", c: "চ", j: "জ", T: "ট", D: "ড", N: "ণ",
@@ -21,8 +21,8 @@ const CLUSTERS: Record<string, string> = {
   hm: "হ্ম", hn: "হ্ন", hN: "হ্ণ", hl: "হ্ল", hb: "হ্ব", hw: "হ্ব", hy: "হ্য", hr: "হ্র",
   // ত্ত্ব / ত্ম / ত্ন / ত্র / ত্য
   ttw: "ত্ত্ব", ttv: "ত্ত্ব", tm: "ত্ম", tn: "ত্ন", ty: "ত্য", tr: "ত্র",
-  // shch / ঞ্চ / ঞ্জ / ঞ্ছ
-  shch: "শ্চ", nch: "ঞ্চ", nj: "ঞ্জ", nchh: "ঞ্ছ",
+  // শ্চ / শ্ছ / ঞ্চ / ঞ্জ / ঞ্ছ
+  shc: "শ্চ", shch: "শ্ছ", nc: "ঞ্চ", nj: "ঞ্জ", nch: "ঞ্ছ", nchh: "ঞ্ছ",
   // ণ conjuncts
   ND: "ণ্ড", NT: "ণ্ট", NTh: "ণ্ঠ", NDh: "ণ্ঢ", Nn: "ণ্ন", Nm: "ণ্ম",
   // ষ conjuncts
@@ -49,8 +49,8 @@ const CLUSTERS: Record<string, string> = {
   dhb: "ধ্ব", dhr: "ধ্র", dhy: "ধ্য",
   // ব্ধ / ব্র / ব্য / ব্ল
   bdh: "ব্ধ", br: "ব্র", by: "ব্য", bl: "ব্ল",
-  // চ্চ / চ্ছ / চ্ছ্ব / চ্ঞ
-  cc: "চ্চ", cch: "চ্ছ",
+  // চ্চ / চ্ছ
+  cc: "চ্চ", cch: "চ্ছ", cchh: "চ্ছ",
   // জ্জ / জ্ঝ / জ্য / জ্র
   jj: "জ্জ", jjh: "জ্ঝ", jy: "জ্য", jr: "জ্র",
   // ট্ট / ট্র / ঠ্য
