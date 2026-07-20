@@ -26,9 +26,13 @@ const CLUSTERS: Record<string, string> = {
   // ণ conjuncts
   ND: "ণ্ড", NT: "ণ্ট", NTh: "ণ্ঠ", NDh: "ণ্ঢ", Nn: "ণ্ন", Nm: "ণ্ম",
   // ষ conjuncts
-  shT: "ষ্ট", shTh: "ষ্ঠ", shN: "ষ্ণ", shp: "ষ্প", shk: "ষ্ক", shm: "ষ্ম", shl: "ষ্ল",
+  ShT: "ষ্ট", ShTh: "ষ্ঠ", ShN: "ষ্ণ", Shp: "ষ্প", Shk: "ষ্ক", Shm: "ষ্ম", Shl: "ষ্ল",
+  // ষ্ট / ষ্ঠ also via lowercase-sh convention (common Avro typing)
+  shT: "ষ্ট", shTh: "ষ্ঠ", shN: "ষ্ণ",
   // স conjuncts
-  sht: "স্ত", shth: "স্থ", shn: "স্ন", shp2: "স্প", shk2: "স্ক", shf: "স্ফ", shm2: "স্ম", shl2: "স্ল",
+  st: "স্ত", sth: "স্থ", sn: "স্ন", sp: "স্প", sk: "স্ক", sf: "স্ফ", sm: "স্ম", sl: "স্ল", sr: "স্র", sw: "স্ব",
+  // sht/shth/shn keep as স variants (common Banglish typing)
+  sht: "স্ত", shth: "স্থ", shn: "স্ন",
   // ঙ conjuncts
   ngg: "ঙ্গ", ngk: "ঙ্ক", ngkh: "ঙ্খ", nggh: "ঙ্ঘ",
   // ন্ত / ন্দ / ন্ধ / ন্ন / ন্ব / ন্ম
@@ -60,7 +64,7 @@ const CLUSTERS: Record<string, string> = {
   // ঘ্ন / ঘ্র
   ghn: "ঘ্ন", ghr: "ঘ্র",
   // shr / shl / shb / shm / shy
-  shr: "শ্র", shl3: "শ্ল", shb: "শ্ব", shm3: "শ্ম", shy: "শ্য",
+  shr: "শ্র", shb: "শ্ব", shy: "শ্য",
 };
 
 type Vowel = { ind: string; kar: string };
