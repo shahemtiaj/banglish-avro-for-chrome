@@ -116,6 +116,9 @@
     "^": "ঁ",
     ":": "ঃ",
   };
+  const PUNCT_MAP = { ".": "।" };
+  const CASE_INSENSITIVE = /[JCKGBPMLHFVWZ]/g;
+  function normalizeCase(s) { return s.replace(CASE_INSENSITIVE, (c) => c.toLowerCase()); }
   // Special: "rr" before consonant = reph (র্)
   const TOKENS = [
     ...Object.keys(VOWELS),
@@ -134,7 +137,7 @@
     const key = latin.toLowerCase();
     if (settings.customDictionary && settings.customDictionary[key]) return settings.customDictionary[key];
     if (dictionary[key]) return dictionary[key];
-
+    latin = normalizeCase(latin);
     let i = 0, out = "", prev = "start";
     while (i < latin.length) {
       let matched = null;
@@ -144,6 +147,7 @@
       if (!matched) {
         const ch = latin[i];
         if (DIGIT_MAP[ch]) { out += DIGIT_MAP[ch]; prev = "other"; }
+        else if (PUNCT_MAP[ch]) { out += PUNCT_MAP[ch]; prev = "other"; }
         else { out += ch; prev = "other"; }
         i++;
         continue;
