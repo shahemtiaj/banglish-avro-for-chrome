@@ -217,6 +217,18 @@ function Landing() {
           </div>
         </div>
       </footer>
+
+      {/* Floating credit */}
+      <a
+        href="https://shahemtiaj.com"
+        target="_blank"
+        rel="noopener"
+        className="fixed bottom-5 right-5 z-50 inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/80 px-4 py-2 text-xs font-medium text-muted-foreground shadow-lg backdrop-blur-xl hover:text-foreground hover:shadow-xl transition-all"
+        style={{ boxShadow: "0 8px 24px rgba(0,0,0,0.08)" }}
+      >
+        Made with <span style={{ color: "#FF5A5F" }}>♥</span> by
+        <span className="font-semibold text-foreground">Shah Emtiaj</span>
+      </a>
     </div>
   );
 }

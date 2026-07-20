@@ -12,6 +12,16 @@ const CONSONANTS: Record<string, string> = {
   R: "ড়", Y: "য়", w: "ওয়", ng: "ং",
 };
 
+const CLUSTERS: Record<string, string> = {
+  kkh: "ক্ষ", ksh: "ক্ষ", kSh: "ক্ষ",
+  jNG: "জ্ঞ", gg: "জ্ঞ", gy: "জ্ঞ",
+  hm: "হ্ম", hn: "হ্ন", hN: "হ্ণ",
+  ttw: "ত্ত্ব", ttv: "ত্ত্ব",
+  shch: "শ্চ", nch: "ঞ্চ", nj: "ঞ্জ", nD: "ণ্ড",
+  shT: "ষ্ট", shTh: "ষ্ঠ", sht: "স্ত", shth: "স্থ", shn: "ষ্ণ",
+  ngg: "ঙ্গ", ngk: "ঙ্ক", ngkh: "ঙ্খ",
+};
+
 type Vowel = { ind: string; kar: string };
 const VOWELS: Record<string, Vowel> = {
   rri: { ind: "ঋ", kar: "ৃ" },
@@ -27,6 +37,7 @@ const SYMBOLS: Record<string, string> = { "^": "ঁ", ":": "ঃ" };
 const TOKENS = [
   ...Object.keys(VOWELS),
   ...Object.keys(CONSONANTS),
+  ...Object.keys(CLUSTERS),
   ...Object.keys(SYMBOLS),
   "rr",
   "r",
@@ -44,6 +55,12 @@ export function transliterate(latin: string): string {
     for (const t of TOKENS) if (latin.startsWith(t, i)) { m = t; break; }
     if (!m) { out += latin[i++]; prev = "other"; continue; }
     i += m.length;
+    if (CLUSTERS[m]) {
+      const g = CLUSTERS[m];
+      out += prev === "consonant" ? "্" + g : g;
+      prev = "consonant";
+      continue;
+    }
     if (m === "rr") { out += "র্"; prev = "ref"; continue; }
     if (m === "r") { out += prev === "consonant" ? "্র" : "র"; prev = "consonant"; continue; }
     if (VOWELS[m]) {
