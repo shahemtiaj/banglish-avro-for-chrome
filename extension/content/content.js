@@ -461,9 +461,38 @@
           updateStats(bn);
         }
       }
+      // Map "." to Bangla dari "।"
+      if (e.key === ".") {
+        e.preventDefault();
+        insertAtCaret(el, "।");
+      }
       hidePanel();
     }
   }, true);
+
+  function insertAtCaret(el, str) {
+    if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
+      const val = el.value;
+      const pos = el.selectionStart ?? val.length;
+      el.value = val.slice(0, pos) + str + val.slice(el.selectionEnd ?? pos);
+      const c = pos + str.length;
+      el.setSelectionRange(c, c);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    range.deleteContents();
+    const node = document.createTextNode(str);
+    range.insertNode(node);
+    const r = document.createRange();
+    r.setStart(node, node.length);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }
 
   document.addEventListener("input", (e) => {
     if (!settings.enabled || settings.language !== "bn") return;
