@@ -38,7 +38,34 @@ chrome.runtime.onInstalled.addListener(async () => {
   } catch (_) {
     // menus may already exist
   }
+  await injectIntoAllTabs();
 });
+
+chrome.runtime.onStartup.addListener(() => {
+  injectIntoAllTabs();
+});
+
+async function injectIntoAllTabs() {
+  try {
+    const tabs = await chrome.tabs.query({});
+    await Promise.all(
+      tabs.map(async (tab) => {
+        if (!tab.id || !tab.url) return;
+        if (!/^https?:\/\//i.test(tab.url) && !/^file:\/\//i.test(tab.url)) return;
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id, allFrames: true },
+            files: ["content/content.js"],
+          });
+        } catch (_) {
+          // restricted page (chrome://, webstore, etc.) — skip silently
+        }
+      }),
+    );
+  } catch (_) {
+    // ignore
+  }
+}
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "se-banglish-toggle") {

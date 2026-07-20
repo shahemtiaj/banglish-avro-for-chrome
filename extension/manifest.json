@@ -36,7 +36,8 @@
     "page": "options/options.html",
     "open_in_tab": true
   },
-  "permissions": ["storage", "contextMenus", "activeTab"],
+  "permissions": ["storage", "contextMenus", "activeTab", "scripting"],
+  "host_permissions": ["<all_urls>"],
   "web_accessible_resources": [
     {
       "resources": ["dictionary/core.json", "icons/*.png"],
