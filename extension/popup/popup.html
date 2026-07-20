@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SE Banglish Avro</title>
+    <link rel="stylesheet" href="../styles/common.css" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <header class="header">
+        <div class="hstack">
+          <span class="brand-logo" aria-hidden="true">অ</span>
+          <div class="stack">
+            <h1>SE Banglish Avro</h1>
+            <p class="small muted">Phonetic Bangla typing</p>
+          </div>
+        </div>
+        <button id="open-options" class="icon-btn" aria-label="Settings" title="Settings">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.36.86.05 1.86-.78 2.31"/></svg>
+        </button>
+      </header>
+
+      <section class="hero card">
+        <div class="hero-inner">
+          <div class="stack gap-2">
+            <span class="small muted">Status</span>
+            <div class="hstack">
+              <span id="status-dot" class="dot" aria-hidden="true"></span>
+              <strong id="status-text">Enabled — Bangla</strong>
+            </div>
+          </div>
+          <label class="switch" aria-label="Enable extension">
+            <input type="checkbox" id="toggle-enabled" />
+            <span class="track"><span class="thumb"></span></span>
+          </label>
+        </div>
+        <div class="segmented primary" role="tablist" aria-label="Language">
+          <button data-lang="bn" aria-pressed="true">বাংলা</button>
+          <button data-lang="en" aria-pressed="false">English</button>
+        </div>
+        <p class="small muted shortcut-hint">Toggle anywhere with <kbd>Ctrl</kbd> + <kbd>Space</kbd></p>
+      </section>
+
+      <section class="card">
+        <div class="row">
+          <div class="row-label"><span class="label">Candidate window</span><span class="hint">Show live suggestions as you type</span></div>
+          <label class="switch"><input type="checkbox" id="toggle-cw" /><span class="track"><span class="thumb"></span></span></label>
+        </div>
+        <div class="row">
+          <div class="row-label"><span class="label">Auto correction</span><span class="hint">Fix common typos automatically</span></div>
+          <label class="switch"><input type="checkbox" id="toggle-ac" /><span class="track"><span class="thumb"></span></span></label>
+        </div>
+        <div class="row">
+          <div class="row-label"><span class="label">Auto space</span><span class="hint">Insert a space after each commit</span></div>
+          <label class="switch"><input type="checkbox" id="toggle-as" /><span class="track"><span class="thumb"></span></span></label>
+        </div>
+        <div class="row">
+          <div class="row-label"><span class="label">Remember last language</span><span class="hint">Restore last mode on new tabs</span></div>
+          <label class="switch"><input type="checkbox" id="toggle-remember" /><span class="track"><span class="thumb"></span></span></label>
+        </div>
+        <div class="row">
+          <div class="row-label"><span class="label">Floating indicator</span><span class="hint">Show current language on page</span></div>
+          <label class="switch"><input type="checkbox" id="toggle-indicator" /><span class="track"><span class="thumb"></span></span></label>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="row">
+          <div class="row-label"><span class="label">Appearance</span><span class="hint">Match system, light, or dark</span></div>
+          <div class="segmented" role="group" aria-label="Theme">
+            <button data-theme="light" aria-pressed="false">Light</button>
+            <button data-theme="dark" aria-pressed="false">Dark</button>
+            <button data-theme="system" aria-pressed="true">System</button>
+          </div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <span class="muted small">v1.0.0</span>
+        <div class="hstack">
+          <a href="https://github.com/" target="_blank" rel="noopener" class="footer-link">GitHub</a>
+          <span class="dot-sep">·</span>
+          <a href="#privacy" id="privacy-link" class="footer-link">Privacy</a>
+        </div>
+      </footer>
+    </main>
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>
