@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "SE Banglish Avro for Chrome",
   "short_name": "SE Banglish",
-  "version": "1.0.0",
+  "version": "2.1.1",
   "description": "Type Bangla anywhere on the web with Avro-style phonetic transliteration. Fast, minimal, Apple-inspired.",
   "action": {
     "default_popup": "popup/popup.html",
