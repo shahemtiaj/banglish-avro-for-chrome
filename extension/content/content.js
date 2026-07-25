@@ -554,8 +554,11 @@
     document.documentElement.appendChild(indicatorHost);
   }
   let indicatorTimer = null;
-  function updateIndicator() {
-    if (!settings.floatingIndicator || !settings.enabled) {
+  function updateIndicator() { flashIndicator(false); }
+  function flashIndicator(force) {
+    // `force` = show even if the user disabled the ambient floating indicator
+    // (used for Ctrl+Space toggles so the language switch is always visible).
+    if (!force && (!settings.floatingIndicator || !settings.enabled)) {
       if (indicatorHost) indicatorHost.__pill.classList.remove("show");
       return;
     }
