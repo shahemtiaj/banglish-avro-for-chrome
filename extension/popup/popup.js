@@ -57,6 +57,12 @@ async function update(patch) {
 
 document.addEventListener("DOMContentLoaded", () => {
   load();
+  // Live update when background/content changes settings (e.g. Ctrl+Space toggle)
+  try {
+    chrome.storage.onChanged.addListener((_ch, area) => {
+      if (area === "sync") load();
+    });
+  } catch (_) {}
   $("#toggle-enabled").addEventListener("change", (e) => update({ enabled: e.target.checked }));
   $("#toggle-cw").addEventListener("change", (e) => update({ candidateWindow: e.target.checked }));
   $("#toggle-ac").addEventListener("change", (e) => update({ autoCorrect: e.target.checked }));

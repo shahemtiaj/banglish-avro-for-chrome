@@ -102,7 +102,7 @@ export function transliterate(latin: string): string {
   latin = normalizeCase(latin);
   let i = 0;
   let out = "";
-  let prev: "start" | "consonant" | "vowel" | "ref" | "other" = "start";
+  let prev: "start" | "consonant" | "vowel" | "ref" | "cluster" | "other" = "start";
   while (i < latin.length) {
     let m: string | null = null;
     for (const t of TOKENS) if (latin.startsWith(t, i)) { m = t; break; }
@@ -116,14 +116,15 @@ export function transliterate(latin: string): string {
     if (CLUSTERS[m]) {
       const g = CLUSTERS[m];
       out += prev === "consonant" ? "্" + g : g;
-      prev = "consonant";
+      const last = g[g.length - 1];
+      prev = /[\u09BE-\u09CC\u09D7]/.test(last) ? "vowel" : "cluster";
       continue;
     }
     if (m === "rr") { out += "র্"; prev = "ref"; continue; }
     if (m === "r") { out += prev === "consonant" ? "্র" : "র"; prev = "consonant"; continue; }
     if (VOWELS[m]) {
       const v = VOWELS[m];
-      out += prev === "consonant" || prev === "ref" ? v.kar : v.ind;
+      out += prev === "consonant" || prev === "ref" || prev === "cluster" ? v.kar : v.ind;
       prev = "vowel";
       continue;
     }
