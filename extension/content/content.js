@@ -30,7 +30,7 @@
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg?.type === "SE_LANG_CHANGED") {
         settings.language = msg.language;
-        updateIndicator();
+        flashIndicator(true);
       }
     });
     fetch(chrome.runtime.getURL("dictionary/core.json"))
@@ -261,19 +261,34 @@
       el.dispatchEvent(new Event("input", { bubbles: true }));
       return;
     }
-    const range = document.createRange();
-    range.setStart(info.node, info.start);
-    range.setEnd(info.node, info.end);
-    range.deleteContents();
-    const textNode = document.createTextNode(replacement);
-    range.insertNode(textNode);
+    // contenteditable: use selection.modify + execCommand insertText so that
+    // frameworks like Lexical (Facebook/Messenger), Draft.js, Slate, ProseMirror
+    // and CKEditor observe a real beforeinput event and keep their model in sync.
     const sel = window.getSelection();
-    const newRange = document.createRange();
-    newRange.setStart(textNode, textNode.length);
-    newRange.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(newRange);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
+    if (!sel) return;
+    const len = (info.text || "").length;
+    if (len > 0) {
+      // Collapse to caret first, then extend backward by exact char count.
+      try { sel.collapseToEnd(); } catch (_) {}
+      for (let i = 0; i < len; i++) sel.modify("extend", "backward", "character");
+    }
+    let inserted = false;
+    try {
+      inserted = document.execCommand("insertText", false, replacement);
+    } catch (_) {}
+    if (!inserted) {
+      // Fallback for editors that reject execCommand
+      const range = sel.rangeCount ? sel.getRangeAt(0) : document.createRange();
+      range.deleteContents();
+      const textNode = document.createTextNode(replacement);
+      range.insertNode(textNode);
+      const r = document.createRange();
+      r.setStart(textNode, textNode.length);
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+      el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: replacement }));
+    }
   }
 
   // ============================================================
@@ -539,8 +554,11 @@
     document.documentElement.appendChild(indicatorHost);
   }
   let indicatorTimer = null;
-  function updateIndicator() {
-    if (!settings.floatingIndicator || !settings.enabled) {
+  function updateIndicator() { flashIndicator(false); }
+  function flashIndicator(force) {
+    // `force` = show even if the user disabled the ambient floating indicator
+    // (used for Ctrl+Space toggles so the language switch is always visible).
+    if (!force && (!settings.floatingIndicator || !settings.enabled)) {
       if (indicatorHost) indicatorHost.__pill.classList.remove("show");
       return;
     }
