@@ -155,11 +155,12 @@
       i += matched.length;
       if (CLUSTERS[matched]) {
         const g = CLUSTERS[matched];
-        // If cluster starts with a vowel kar we cannot join to prev; safe by design (all clusters start with a consonant).
         out += (prev === "consonant") ? "্" + g : g;
-        // If cluster ends with a kar (contains া, ে, etc. at tail) treat as vowel-terminated
         const last = g[g.length - 1];
-        prev = /[\u09BE-\u09CC\u09D7]/.test(last) ? "vowel" : "consonant";
+        // Cluster ends with a kar → vowel state; otherwise "cluster" (a completed
+        // ligature: next vowel still becomes a kar, but next consonant does NOT
+        // auto-conjunct — fixes bybohar → ব্যবহার instead of ব্য্বহার).
+        prev = /[\u09BE-\u09CC\u09D7]/.test(last) ? "vowel" : "cluster";
         continue;
       }
       if (matched === "rr") {
@@ -177,7 +178,7 @@
       }
       if (VOWELS[matched]) {
         const v = VOWELS[matched];
-        out += (prev === "consonant" || prev === "ref") ? v.kar : v.ind;
+        out += (prev === "consonant" || prev === "ref" || prev === "cluster") ? v.kar : v.ind;
         prev = "vowel";
         continue;
       }
