@@ -30,7 +30,7 @@
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg?.type === "SE_LANG_CHANGED") {
         settings.language = msg.language;
-        updateIndicator();
+        flashIndicator(true);
       }
     });
     fetch(chrome.runtime.getURL("dictionary/core.json"))
