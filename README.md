@@ -87,4 +87,4 @@ Made with love by **[Shah Emtiaj](https://shahemtiaj.com)**.
 
 ## License
 
-[MIT](LICENSE) © Shah Emtiaj
+[MIT](LICENSE) © **[Shah Emtiaj](https://shahemtiaj.com)**
