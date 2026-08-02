@@ -1,592 +1,90 @@
-# Avro Chrome
+# SE Banglish Avro for Chrome
 
-You are a senior Chrome Extension engineer, UX designer, and Bangla input method expert.
+[![Chrome Web Store Version](https://img.shields.io/chrome-web-store/v/negapmfaeibbdafolmhidaoiddcigdbh?label=Chrome%20Web%20Store&color=FF9F1C&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/se-banglish-avro-for-chro/negapmfaeibbdafolmhidaoiddcigdbh)
+[![Chrome Web Store Users](https://img.shields.io/chrome-web-store/users/negapmfaeibbdafolmhidaoiddcigdbh?label=Users&color=FFC857&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/se-banglish-avro-for-chro/negapmfaeibbdafolmhidaoiddcigdbh)
+[![License: MIT](https://img.shields.io/badge/License-MIT-3B82F6.svg)](LICENSE)
+[![Manifest V3](https://img.shields.io/badge/Manifest-V3-10B981.svg)](https://developer.chrome.com/docs/extensions/mv3/intro/)
 
-Build a production-ready Chrome Extension named:
+> An Apple-inspired, Avro-style phonetic keyboard for Chrome. Type English letters and watch flawless Bangla appear in every input, textarea, and content editor on the web.
 
-SE Banglish Avro for Chrome
+**[Install from Chrome Web Store](https://chromewebstore.google.com/detail/se-banglish-avro-for-chro/negapmfaeibbdafolmhidaoiddcigdbh?authuser=0&hl=en)** · **[Landing Page](https://shahemtiaj.com)** · **[Report an Issue](../../issues)**
 
-Goal:
+---
 
-Create the best Bangla phonetic typing extension for Chrome with an Apple-inspired Material 3 interface.
+## Features
 
-This should feel more polished than existing Bangla typing extensions while remaining lightweight, blazing fast, and modern.
+- **Avro-style phonetic engine** — Longest-match tokenizer with full support for kar, ref, juktakkhor, hasanta, chandrabindu, anuswar, and visarga. Under 5 ms per keystroke.
+- **Floating candidate window** — Glassy suggestion popup with arrow-key navigation, number shortcuts, and one-click commit — inspired by macOS IMEs.
+- **Works everywhere** — Gmail, X, Facebook, Messenger, Notion, Medium, ChatGPT, Claude, Gemini, Google Docs, and any editable field on any site.
+- **Custom dictionary** — Add names, brands, and slang once; they show up as top suggestions everywhere. Import and export as JSON.
+- **Apple-inspired UI** — Material 3 motion, Apple HIG spacing, smooth springs, ripple hovers, and light/dark/system theme.
+- **Private by design** — Everything runs locally. No servers, no analytics, no tracking. Your dictionary syncs only via Chrome Storage Sync.
 
-====================================================
+## Installation
 
-CORE PURPOSE
+### Option 1: Chrome Web Store (Recommended)
 
-====================================================
+Click the button below and install in one click:
 
-The extension allows users to type Bangla anywhere on the web using Avro-style phonetic transliteration.
+**[Install SE Banglish Avro from Chrome Web Store](https://chromewebstore.google.com/detail/se-banglish-avro-for-chro/negapmfaeibbdafolmhidaoiddcigdbh?authuser=0&hl=en)**
 
-Users type English letters.
+### Option 2: Manual Load (Unpacked)
 
-Example:
+1. Download the latest `se-banglish-avro.zip` from the [releases page](../../releases) or the [landing page](https://shahemtiaj.com).
+2. Unzip the file anywhere on your computer.
+3. Open Chrome and go to `chrome://extensions`.
+4. Enable **Developer mode** (toggle in the top-right corner).
+5. Click **Load unpacked** and select the unzipped folder.
+6. Done — start typing Bangla anywhere.
 
-ami
+## Usage
 
-→ আমি
+| Action | Shortcut |
+| --- | --- |
+| Toggle Bangla / English | `Ctrl + Space` (Windows/Linux) or `MacCtrl + Space` (macOS) |
+| Select next suggestion | `↓` or `Tab` |
+| Select previous suggestion | `↑` |
+| Commit selected suggestion | `Enter` or `Space` |
+| Insert Bengali dari (।) | `.` in Bangla mode |
 
-bangladesh
+Type phonetically, e.g.:
 
-→ বাংলাদেশ
+| Phonetic | Bangla |
+| --- | --- |
+| `ami` | আমি |
+| `bangla` | বাংলা |
+| `shikkha` | শিক্ষা |
+| `bybohar` | ব্যবহার |
+| `bishwabidyaloy` | বিশ্ববিদ্যালয় |
+| `muktijuddho` | মুক্তিযুদ্ধ |
 
-shundor
+## Privacy
 
-→ সুন্দর
-
-kotha
-
-→ কথা
-
-valo
-
-→ ভালো
-
-The extension should automatically replace Latin characters with Bangla.
-
-The typing experience must be extremely responsive.
-
-Typing latency should feel almost zero.
-
-====================================================
-
-DESIGN REQUIREMENTS
-
-====================================================
-
-Visual Style:
-
-Apple Human Interface inspired
-
-Google Material 3
-
-Minimal
-
-Premium
-
-Elegant
-
-Smooth animations
-
-Glassmorphism where appropriate
-
-Rounded corners
-
-Soft shadows
-
-Excellent spacing
-
-No clutter
-
-Feels like a native macOS application.
-
-====================================================
-
-COLOR PALETTE
-
-====================================================
-
-Primary
-
-#FF9F1C
-
-Secondary
-
-#FFB84D
-
-Background Light
-
-#FAFAFA
-
-Background Dark
-
-#1E1E1E
-
-Text
-
-#111111
-
-Accent
-
-#FFC857
-
-====================================================
-
-TYPOGRAPHY
-
-====================================================
-
-Inter
-
-Noto Sans Bengali
-
-Use proper typography hierarchy.
-
-====================================================
-
-POPUP UI
-
-====================================================
-
-Modern dashboard.
-
-Header
-
-Extension logo
-
-Name
-
-Settings button
-
-Main Toggle
-
-Enable/Disable typing
-
-Language selector
-
-Bangla
-
-English
-
-Typing Mode
-
-Phonetic
-
-Candidate window toggle
-
-Auto correction toggle
-
-Auto space toggle
-
-Remember last language
-
-Floating status indicator toggle
-
-Dark mode
-
-Light mode
-
-System mode
-
-Footer
-
-Version
-
-GitHub
-
-Privacy
-
-====================================================
-
-TYPING ENGINE
-
-====================================================
-
-Implement Avro-style phonetic transliteration engine.
-
-Must support
-
-Complex Bangla conjuncts
-
-Kar
-
-Ref
-
-Juktakkhor
-
-Hasanta
-
-Chandrabindu
-
-Anuswar
-
-Visarga
-
-ZWNJ
-
-ZWJ
-
-Smart vowel handling
-
-Context-aware replacements
-
-Incremental conversion
-
-No input lag.
-
-Architecture must allow loading dictionary separately.
-
-Dictionary should be JSON-based.
-
-====================================================
-
-CANDIDATE WINDOW
-
-====================================================
-
-Like Microsoft IME / Google Japanese IME.
-
-Shows
-
-Top suggestions
-
-Keyboard navigation
-
-Arrow keys
-
-Enter
-
-Tab
-
-Number shortcuts
-
-Mouse click
-
-Live updating
-
-Scrollable
-
-Smooth animation
-
-====================================================
-
-SMART FEATURES
-
-====================================================
-
-Prediction
-
-Word completion
-
-User history
-
-Frequently used words
-
-Recent words
-
-Pinned words
-
-Learning dictionary
-
-Custom dictionary
-
-Add word
-
-Delete word
-
-Import dictionary
-
-Export dictionary
-
-====================================================
-
-SHORTCUTS
-
-====================================================
-
-Configurable shortcut
-
-Default
-
-Ctrl + Space
-
-Switch Bangla / English
-
-Popup shortcut
-
-Context menu
-
-====================================================
-
-SUPPORTED INPUTS
-
-====================================================
-
-Input
-
-textarea
-
-input
-
-contenteditable
-
-Google Docs (best effort)
-
-Facebook
-
-Messenger
-
-Twitter/X
-
-Gmail
-
-Reddit
-
-Notion
-
-Medium
-
-WordPress
-
-Elementor
-
-ChatGPT
-
-Claude
-
-Gemini
-
-Every editable webpage.
-
-====================================================
-
-PERFORMANCE
-
-====================================================
-
-Typing latency
-
-Under 5ms
-
-Memory
-
-Minimal
-
-No unnecessary DOM observers.
-
-Efficient event delegation.
-
-Lazy loading.
-
-====================================================
-
-OPTIONS PAGE
-
-====================================================
-
-Apple-style settings page.
-
-Sections
-
-General
-
-Typing
-
-Dictionary
-
-Appearance
-
-Shortcuts
-
-Backup
-
-About
-
-====================================================
-
-FEATURES
-
-====================================================
-
-Import settings
-
-Export settings
-
-Cloud-ready architecture
-
-Sync with Chrome Storage Sync
-
-Reset settings
-
-Statistics
-
-Words typed
-
-Characters typed
-
-Most used language
-
-====================================================
-
-ACCESSIBILITY
-
-====================================================
-
-Keyboard-first
-
-ARIA
-
-High contrast
-
-Screen reader friendly
-
-RTL-safe
-
-====================================================
-
-ANIMATIONS
-
-====================================================
-
-Material Motion
-
-Spring animations
-
-150-250ms
-
-Subtle hover effects
-
-Ripple effects
-
-Smooth transitions
-
-====================================================
-
-TECH STACK
-
-====================================================
-
-Manifest V3
-
-Vanilla TypeScript
-
-ES Modules
-
-No React
-
-No Vue
-
-No Angular
-
-No jQuery
-
-SCSS
-
-Chrome Storage API
-
-Commands API
-
-ContextMenus API
-
-Offscreen API only if required.
-
-====================================================
-
-PROJECT STRUCTURE
-
-====================================================
-
-Use clean architecture.
-
-src/
-
-engine/
-
-dictionary/
-
-popup/
-
-options/
-
-content/
-
-background/
-
-shared/
-
-assets/
-
-styles/
-
-utils/
-
-====================================================
-
-CODE QUALITY
-
-====================================================
-
-Strict TypeScript
-
-ESLint
-
-Prettier
-
-Reusable components
-
-Zero duplicated code
-
-Comments only where necessary.
-
-====================================================
-
-FUTURE FEATURES (Architecture Ready)
-
-====================================================
-
-AI prediction
-
-Cloud sync
-
-Phrase suggestions
-
-Emoji suggestions
-
-Voice typing
-
-OCR typing
-
-Offline dictionary updates
-
-Multiple layouts
-
-Ridmik style
-
-National layout
-
-Probhat
-
-Custom layout
-
-====================================================
-
-DELIVERABLE
-
-====================================================
-
-Produce a complete production-ready Chrome Extension.
-
-Everything should be modular.
-
-Every component must be fully implemented.
-
-No placeholders.
-
-No demo code.
-
-No fake implementations.
-
-The final extension should be polished enough to publish directly to the Chrome Web Store.
-
-This project was built with [Lovable](https://lovable.dev).
-
-## Build with Lovable
-
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/cd0c7f62-70ee-4fef-bb8a-97d93a5b9218).
-
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
+SE Banglish Avro does not collect, transmit, or store any personal data on external servers. All transliteration happens locally in your browser. Your custom dictionary is stored in Chrome's synced storage and stays tied to your Google account only if you have Chrome Sync enabled.
 
 ## Development
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+This project is built as a Manifest V3 Chrome Extension using vanilla JavaScript. The landing page is a TanStack Start application.
 
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+```bash
+# Install dependencies
+bun install
+
+# Run the landing page dev server
+bun dev
+
+# Build the extension ZIP
+bun run build:extension
 ```
+
+## Credits
+
+Made with love by **[Shah Emtiaj](https://shahemtiaj.com)**.
+
+- Website: [shahemtiaj.com](https://shahemtiaj.com)
+- GitHub: [@shahemtiaj](https://github.com/shahemtiaj)
+- Facebook: [@shahemtiaj](https://facebook.com/shahemtiaj)
+
+## License
+
+[MIT](LICENSE) © Shah Emtiaj
