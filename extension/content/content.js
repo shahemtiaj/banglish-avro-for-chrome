@@ -747,7 +747,9 @@
   }
 
   document.addEventListener("input", (e) => {
+    if (isDocsTextEventFrame()) return; // handled by the Google Docs adapter
     if (!settings.enabled || settings.language !== "bn") return;
+
     const el = e.target;
     if (!isEditable(el)) return;
     if (!settings.candidateWindow) return;
