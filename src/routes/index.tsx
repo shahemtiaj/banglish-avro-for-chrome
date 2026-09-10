@@ -208,7 +208,7 @@ function Landing() {
         <div className="mx-auto max-w-6xl px-6 py-10 flex flex-col md:flex-row items-center justify-between gap-4 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
             <span className="inline-flex h-6 w-6 items-center justify-center rounded-md text-white text-xs font-bold" style={{ background: "linear-gradient(135deg, #FF9F1C, #FFC857)", fontFamily: "'Noto Sans Bengali', sans-serif" }}>অ</span>
-            <span>SE Banglish Avro · v2.1.1</span>
+            <span>SE Banglish Avro · v3.1.1</span>
           </div>
           <div className="flex items-center gap-6">
             <a href="#features" className="hover:text-foreground">Features</a>
