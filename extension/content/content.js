@@ -388,7 +388,12 @@
         rect = target.getBoundingClientRect();
       }
     }
+    placePanel(rect);
+  }
+
+  function placePanel(rect) {
     // Measure panel then flip/shift to stay inside viewport
+
     panelListEl.style.left = "-9999px";
     panelListEl.style.top = "0px";
     const vw = window.innerWidth, vh = window.innerHeight;
@@ -408,6 +413,7 @@
   }
 
   function hidePanel() {
+    docsPanelActive = false;
     if (!panelListEl) return;
     panelListEl.classList.remove("open");
     panelItems = [];
@@ -416,6 +422,12 @@
   }
 
   function commitPanel(index) {
+    if (docsPanelActive) {
+      const choice = panelItems[index];
+      docsPostToFrame({ kind: "commit", index, text: choice });
+      hidePanel();
+      return;
+    }
     if (!panelTarget || !panelInfo) return hidePanel();
     const choice = panelItems[index];
     if (!choice) return hidePanel();
@@ -425,6 +437,228 @@
     updateStats(choice);
     hidePanel();
   }
+
+  // ============================================================
+  // Google Docs support
+  // Docs renders text on a <canvas>; keystrokes go to a hidden
+  // .docs-texteventtarget-iframe. We buffer Latin keys in that frame,
+  // then replace them with Bangla using synthetic Backspace + paste,
+  // and render the candidate panel in the top frame near the Kix caret.
+  // ============================================================
+  const IS_DOCS = /(^|\.)docs\.google\.com$/.test(location.hostname) ||
+    (() => { try { return window.top !== window && /docs\.google\.com/.test(document.referrer); } catch (_) { return false; } })();
+
+  let docsPanelActive = false;
+  let docsFrameWin = null;
+
+  function docsEventTargetFrame() {
+    return document.querySelector("iframe.docs-texteventtarget-iframe");
+  }
+
+  function docsPostToFrame(payload) {
+    try {
+      const win = docsFrameWin || docsEventTargetFrame()?.contentWindow;
+      win?.postMessage({ __seDocs: 1, ...payload }, "*");
+    } catch (_) {}
+  }
+
+  function docsCaretRect() {
+    const caret = document.querySelector(".kix-cursor-caret") || document.querySelector(".kix-cursor");
+    if (caret) {
+      const r = caret.getBoundingClientRect();
+      if (r.width || r.height) return r;
+    }
+    const page = document.querySelector(".kix-page") || document.body;
+    const r = page.getBoundingClientRect();
+    return { left: r.left + 40, right: r.left + 40, top: r.top + 80, bottom: r.top + 80, width: 0, height: 0 };
+  }
+
+  // ---- top frame: render the panel on behalf of the hidden iframe ----
+  function isDocsTextEventFrame() {
+    try {
+      const fe = window.frameElement;
+      return !!fe && /docs-texteventtarget-iframe/.test(fe.className || "");
+    } catch (_) { return false; }
+  }
+
+  if (IS_DOCS && window.top === window) {
+    window.addEventListener("message", (ev) => {
+      const d = ev.data;
+      if (!d || d.__seDocs !== 1) return;
+      docsFrameWin = ev.source;
+      if (d.kind === "show") {
+        ensurePanel();
+        docsPanelActive = true;
+        panelTarget = null;
+        panelInfo = null;
+        panelItems = d.items || [];
+        panelIndex = d.index || 0;
+        renderPanel();
+        placePanel(docsCaretRect());
+        requestAnimationFrame(() => panelListEl.classList.add("open"));
+      } else if (d.kind === "index") {
+        panelIndex = d.index || 0;
+        renderPanel();
+      } else if (d.kind === "hide") {
+        hidePanel();
+      } else if (d.kind === "stats") {
+        updateStats(d.text || "");
+      }
+    });
+  }
+
+  // ---- hidden iframe: intercept typing ----
+  if (IS_DOCS) {
+    let buf = "";
+    const WORD_RE = /^[A-Za-z^:0-9]$/;
+
+    const target = () => document.activeElement || document.body;
+
+    function fireKey(type, key, code, keyCode) {
+      const ev = new KeyboardEvent(type, {
+        key, code, keyCode, which: keyCode,
+        bubbles: true, cancelable: true, composed: true,
+      });
+      target().dispatchEvent(ev);
+    }
+
+    function docsBackspace(n) {
+      for (let i = 0; i < n; i++) {
+        fireKey("keydown", "Backspace", "Backspace", 8);
+        fireKey("keyup", "Backspace", "Backspace", 8);
+        try { document.execCommand("delete", false); } catch (_) {}
+      }
+    }
+
+    function docsInsert(text) {
+      if (!text) return;
+      const el = target();
+      let ok = false;
+      try {
+        const dt = new DataTransfer();
+        dt.setData("text/plain", text);
+        dt.setData("text/html", text);
+        ok = !el.dispatchEvent(new ClipboardEvent("paste", {
+          clipboardData: dt, bubbles: true, cancelable: true,
+        }));
+      } catch (_) {}
+      if (!ok) {
+        try { document.execCommand("insertText", false, text); } catch (_) {}
+      }
+    }
+
+    function sendPanel() {
+      if (!settings.candidateWindow || !buf || !/[A-Za-z]/.test(buf)) {
+        try { window.top.postMessage({ __seDocs: 1, kind: "hide" }, "*"); } catch (_) {}
+        return;
+      }
+      try {
+        window.top.postMessage({ __seDocs: 1, kind: "show", items: suggest(buf), index: 0 }, "*");
+      } catch (_) {}
+    }
+
+    let docsIndex = 0;
+    let docsItems = [];
+
+    window.addEventListener("message", (ev) => {
+      const d = ev.data;
+      if (!d || d.__seDocs !== 1 || d.kind !== "commit") return;
+      if (!buf) return;
+      const text = d.text;
+      if (!text) return;
+      docsBackspace(buf.length);
+      docsInsert(text);
+      buf = "";
+      try { window.top.postMessage({ __seDocs: 1, kind: "stats", text }, "*"); } catch (_) {}
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (!isDocsTextEventFrame()) return;
+      if (!settings.enabled || settings.language !== "bn") { buf = ""; return; }
+      if (e.ctrlKey || e.metaKey || e.altKey) { buf = ""; return; }
+
+      // panel navigation
+      if (buf && settings.candidateWindow) {
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          const dir = e.key === "ArrowDown" ? 1 : -1;
+          docsItems = suggest(buf);
+          docsIndex = (docsIndex + dir + docsItems.length) % docsItems.length;
+          e.preventDefault();
+          try { window.top.postMessage({ __seDocs: 1, kind: "index", index: docsIndex }, "*"); } catch (_) {}
+          return;
+        }
+        if (e.key === "Tab") {
+          docsItems = suggest(buf);
+          const choice = docsItems[docsIndex];
+          if (choice) {
+            e.preventDefault();
+            docsBackspace(buf.length);
+            docsInsert(choice);
+            buf = "";
+            docsIndex = 0;
+            try { window.top.postMessage({ __seDocs: 1, kind: "hide" }, "*"); } catch (_) {}
+          }
+          return;
+        }
+        if (e.key === "Escape") {
+          buf = "";
+          docsIndex = 0;
+          try { window.top.postMessage({ __seDocs: 1, kind: "hide" }, "*"); } catch (_) {}
+          return;
+        }
+      }
+
+      if (e.key === "Backspace") {
+        buf = buf.slice(0, -1);
+        docsIndex = 0;
+        setTimeout(sendPanel, 0);
+        return;
+      }
+
+      if (e.key.length === 1 && WORD_RE.test(e.key)) {
+        buf += e.key;
+        docsIndex = 0;
+        setTimeout(sendPanel, 0);
+        return;
+      }
+
+      const isSpace = e.key === " ";
+      const isEnter = e.key === "Enter";
+      const isPunct = /^[.,!?;:'"()\-–—/]$/.test(e.key);
+
+      if (isSpace || isEnter || isPunct) {
+        if (buf && /[A-Za-z]/.test(buf)) {
+          const bn = transliterate(buf);
+          const tail = isEnter ? "" : (e.key === "." ? "।" : e.key);
+          if (bn) {
+            e.preventDefault();
+            docsBackspace(buf.length);
+            docsInsert(bn + tail);
+            try { window.top.postMessage({ __seDocs: 1, kind: "stats", text: bn }, "*"); } catch (_) {}
+            if (isEnter) {
+              fireKey("keydown", "Enter", "Enter", 13);
+              fireKey("keyup", "Enter", "Enter", 13);
+            }
+          }
+        } else if (e.key === "." ) {
+          e.preventDefault();
+          docsInsert("।");
+        }
+        buf = "";
+        docsIndex = 0;
+        try { window.top.postMessage({ __seDocs: 1, kind: "hide" }, "*"); } catch (_) {}
+        return;
+      }
+
+      // any other key (arrows, home/end, etc.) resets the buffer
+      if (e.key.length > 1) {
+        buf = "";
+        docsIndex = 0;
+        try { window.top.postMessage({ __seDocs: 1, kind: "hide" }, "*"); } catch (_) {}
+      }
+    }, true);
+  }
+
 
   // ============================================================
   // Stats
@@ -447,7 +681,9 @@
   // Event handling
   // ============================================================
   document.addEventListener("keydown", (e) => {
+    if (isDocsTextEventFrame()) return; // handled by the Google Docs adapter
     if (!settings.enabled || settings.language !== "bn") return;
+
     const el = e.target;
     if (!isEditable(el)) return;
 
@@ -511,7 +747,9 @@
   }
 
   document.addEventListener("input", (e) => {
+    if (isDocsTextEventFrame()) return; // handled by the Google Docs adapter
     if (!settings.enabled || settings.language !== "bn") return;
+
     const el = e.target;
     if (!isEditable(el)) return;
     if (!settings.candidateWindow) return;
