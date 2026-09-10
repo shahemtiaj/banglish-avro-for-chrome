@@ -388,7 +388,12 @@
         rect = target.getBoundingClientRect();
       }
     }
+    placePanel(rect);
+  }
+
+  function placePanel(rect) {
     // Measure panel then flip/shift to stay inside viewport
+
     panelListEl.style.left = "-9999px";
     panelListEl.style.top = "0px";
     const vw = window.innerWidth, vh = window.innerHeight;
