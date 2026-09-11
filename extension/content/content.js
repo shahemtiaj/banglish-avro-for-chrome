@@ -525,152 +525,124 @@
 
   // ---- hidden iframe: intercept typing ----
   if (IS_DOCS) {
+    // Strategy: swallow the Latin keystrokes entirely (Docs never sees them),
+    // keep them in our own buffer, and insert only the finished Bangla word.
+    // This avoids synthetic-Backspace deletion, which Docs handles unreliably.
     let buf = "";
+    let docsIndex = 0;
     const WORD_RE = /^[A-Za-z^:0-9]$/;
 
     const target = () => document.activeElement || document.body;
-
-    function fireKey(type, key, code, keyCode) {
-      const ev = new KeyboardEvent(type, {
-        key, code, keyCode, which: keyCode,
-        bubbles: true, cancelable: true, composed: true,
-      });
-      target().dispatchEvent(ev);
-    }
-
-    function docsBackspace(n) {
-      for (let i = 0; i < n; i++) {
-        fireKey("keydown", "Backspace", "Backspace", 8);
-        fireKey("keyup", "Backspace", "Backspace", 8);
-        try { document.execCommand("delete", false); } catch (_) {}
-      }
-    }
 
     function docsInsert(text) {
       if (!text) return;
       const el = target();
       let ok = false;
-      try {
-        const dt = new DataTransfer();
-        dt.setData("text/plain", text);
-        dt.setData("text/html", text);
-        ok = !el.dispatchEvent(new ClipboardEvent("paste", {
-          clipboardData: dt, bubbles: true, cancelable: true,
-        }));
-      } catch (_) {}
+      try { ok = document.execCommand("insertText", false, text); } catch (_) {}
       if (!ok) {
-        try { document.execCommand("insertText", false, text); } catch (_) {}
+        try {
+          const dt = new DataTransfer();
+          dt.setData("text/plain", text);
+          el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+        } catch (_) {}
       }
+    }
+
+    function hideTop() {
+      try { window.top.postMessage({ __seDocs: 1, kind: "hide" }, "*"); } catch (_) {}
     }
 
     function sendPanel() {
-      if (!settings.candidateWindow || !buf || !/[A-Za-z]/.test(buf)) {
-        try { window.top.postMessage({ __seDocs: 1, kind: "hide" }, "*"); } catch (_) {}
-        return;
-      }
+      if (!buf || !/[A-Za-z]/.test(buf)) { hideTop(); return; }
       try {
-        window.top.postMessage({ __seDocs: 1, kind: "show", items: suggest(buf), index: 0 }, "*");
+        window.top.postMessage(
+          { __seDocs: 1, kind: "show", items: suggest(buf), index: docsIndex, raw: buf },
+          "*"
+        );
       } catch (_) {}
     }
 
-    let docsIndex = 0;
-    let docsItems = [];
+    function commit(text, tail) {
+      docsInsert((text || "") + (tail || ""));
+      buf = "";
+      docsIndex = 0;
+      hideTop();
+      if (text) { try { window.top.postMessage({ __seDocs: 1, kind: "stats", text }, "*"); } catch (_) {} }
+    }
 
     window.addEventListener("message", (ev) => {
       const d = ev.data;
       if (!d || d.__seDocs !== 1 || d.kind !== "commit") return;
-      if (!buf) return;
-      const text = d.text;
-      if (!text) return;
-      docsBackspace(buf.length);
-      docsInsert(text);
-      buf = "";
-      try { window.top.postMessage({ __seDocs: 1, kind: "stats", text }, "*"); } catch (_) {}
+      if (!buf || !d.text) return;
+      commit(d.text, "");
     });
 
     document.addEventListener("keydown", (e) => {
       if (!isDocsTextEventFrame()) return;
       if (!settings.enabled || settings.language !== "bn") { buf = ""; return; }
-      if (e.ctrlKey || e.metaKey || e.altKey) { buf = ""; return; }
+      if (e.ctrlKey || e.metaKey || e.altKey) { buf = ""; hideTop(); return; }
 
-      // panel navigation
-      if (buf && settings.candidateWindow) {
+      if (buf) {
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-          const dir = e.key === "ArrowDown" ? 1 : -1;
-          docsItems = suggest(buf);
-          docsIndex = (docsIndex + dir + docsItems.length) % docsItems.length;
+          const items = suggest(buf);
+          docsIndex = (docsIndex + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
           e.preventDefault();
           try { window.top.postMessage({ __seDocs: 1, kind: "index", index: docsIndex }, "*"); } catch (_) {}
           return;
         }
         if (e.key === "Tab") {
-          docsItems = suggest(buf);
-          const choice = docsItems[docsIndex];
-          if (choice) {
-            e.preventDefault();
-            docsBackspace(buf.length);
-            docsInsert(choice);
-            buf = "";
-            docsIndex = 0;
-            try { window.top.postMessage({ __seDocs: 1, kind: "hide" }, "*"); } catch (_) {}
-          }
+          e.preventDefault();
+          commit(suggest(buf)[docsIndex] || transliterate(buf), "");
           return;
         }
         if (e.key === "Escape") {
-          buf = "";
+          e.preventDefault();
+          commit(buf, ""); // give the raw Latin back so nothing is lost
+          return;
+        }
+        if (e.key === "Backspace") {
+          e.preventDefault();
+          buf = buf.slice(0, -1);
           docsIndex = 0;
-          try { window.top.postMessage({ __seDocs: 1, kind: "hide" }, "*"); } catch (_) {}
+          sendPanel();
           return;
         }
       }
 
-      if (e.key === "Backspace") {
-        buf = buf.slice(0, -1);
-        docsIndex = 0;
-        setTimeout(sendPanel, 0);
-        return;
-      }
-
+      // Buffer printable Latin — Docs must not receive it.
       if (e.key.length === 1 && WORD_RE.test(e.key)) {
+        e.preventDefault();
         buf += e.key;
         docsIndex = 0;
-        setTimeout(sendPanel, 0);
+        sendPanel();
         return;
       }
 
       const isSpace = e.key === " ";
       const isEnter = e.key === "Enter";
-      const isPunct = /^[.,!?;:'"()\-–—/]$/.test(e.key);
+      const isPunct = e.key.length === 1 && /[.,!?;:'"()\-–—/]/.test(e.key);
 
-      if (isSpace || isEnter || isPunct) {
+      if (isSpace || isPunct) {
+        e.preventDefault();
+        const tail = e.key === "." ? "।" : e.key;
+        commit(buf && /[A-Za-z]/.test(buf) ? transliterate(buf) : buf, tail);
+        return;
+      }
+      if (isEnter) {
         if (buf && /[A-Za-z]/.test(buf)) {
-          const bn = transliterate(buf);
-          const tail = isEnter ? "" : (e.key === "." ? "।" : e.key);
-          if (bn) {
-            e.preventDefault();
-            docsBackspace(buf.length);
-            docsInsert(bn + tail);
-            try { window.top.postMessage({ __seDocs: 1, kind: "stats", text: bn }, "*"); } catch (_) {}
-            if (isEnter) {
-              fireKey("keydown", "Enter", "Enter", 13);
-              fireKey("keyup", "Enter", "Enter", 13);
-            }
-          }
-        } else if (e.key === "." ) {
           e.preventDefault();
-          docsInsert("।");
+          commit(transliterate(buf), "\n");
+          return;
         }
         buf = "";
-        docsIndex = 0;
-        try { window.top.postMessage({ __seDocs: 1, kind: "hide" }, "*"); } catch (_) {}
+        hideTop();
         return;
       }
 
-      // any other key (arrows, home/end, etc.) resets the buffer
       if (e.key.length > 1) {
         buf = "";
         docsIndex = 0;
-        try { window.top.postMessage({ __seDocs: 1, kind: "hide" }, "*"); } catch (_) {}
+        hideTop();
       }
     }, true);
   }
