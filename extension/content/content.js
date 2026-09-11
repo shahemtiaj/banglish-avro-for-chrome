@@ -204,15 +204,21 @@
     const results = [];
     const primary = transliterate(latin);
     results.push(primary);
-    // Dictionary prefix matches (up to 6)
     const custom = settings.customDictionary || {};
     const pool = { ...dictionary, ...custom };
+    // exact match first
+    if (pool[key] && !results.includes(pool[key])) results.splice(0, 0, pool[key]);
+    // rank prefix matches by key length (closest to what was typed first)
     const hits = [];
     for (const k in pool) {
-      if (k.startsWith(key) && k !== key) hits.push(pool[k]);
-      if (hits.length >= 8) break;
+      if (k.length > key.length && k.startsWith(key)) hits.push(k);
     }
-    for (const h of hits) if (!results.includes(h)) results.push(h);
+    hits.sort((a, b) => a.length - b.length || (a < b ? -1 : 1));
+    for (const k of hits) {
+      const v = pool[k];
+      if (!results.includes(v)) results.push(v);
+      if (results.length >= 8) break;
+    }
     return results.slice(0, 8);
   }
 
