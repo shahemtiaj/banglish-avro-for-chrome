@@ -738,7 +738,7 @@
     }
   }, true);
 
-  // Resolve the真 innermost target, seeing through shadow roots (web-component
+  // Resolve the innermost target, seeing through shadow roots (web-component
   // based editors) and falling back to the deep active element.
   function eventTarget(e) {
     let t = null;
@@ -755,12 +755,16 @@
 
   function insertAtCaret(el, str) {
     if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
-      const val = el.value;
-      const pos = el.selectionStart ?? val.length;
-      el.value = val.slice(0, pos) + str + val.slice(el.selectionEnd ?? pos);
-      const c = pos + str.length;
-      el.setSelectionRange(c, c);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
+      let ok = false;
+      try { ok = document.execCommand("insertText", false, str); } catch (_) {}
+      if (!ok) {
+        const val = el.value;
+        const pos = el.selectionStart ?? val.length;
+        el.value = val.slice(0, pos) + str + val.slice(el.selectionEnd ?? pos);
+        const c = pos + str.length;
+        el.setSelectionRange(c, c);
+        el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: str }));
+      }
       return;
     }
     const sel = window.getSelection();
