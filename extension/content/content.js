@@ -700,7 +700,7 @@
     if (isDocsTextEventFrame()) return; // handled by the Google Docs adapter
     if (!settings.enabled || settings.language !== "bn") return;
 
-    const el = e.target;
+    const el = eventTarget(e);
     if (!isEditable(el)) return;
 
     // Panel navigation
@@ -738,6 +738,21 @@
     }
   }, true);
 
+  // Resolve the真 innermost target, seeing through shadow roots (web-component
+  // based editors) and falling back to the deep active element.
+  function eventTarget(e) {
+    let t = null;
+    try { const p = e.composedPath && e.composedPath(); if (p && p.length) t = p[0]; } catch (_) {}
+    if (!t || t.nodeType !== 1) t = e.target;
+    if (!isEditable(t)) {
+      let a = document.activeElement;
+      let guard = 0;
+      while (a && a.shadowRoot && a.shadowRoot.activeElement && guard++ < 10) a = a.shadowRoot.activeElement;
+      if (a && isEditable(a)) t = a;
+    }
+    return t;
+  }
+
   function insertAtCaret(el, str) {
     if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
       const val = el.value;
@@ -766,7 +781,7 @@
     if (isDocsTextEventFrame()) return; // handled by the Google Docs adapter
     if (!settings.enabled || settings.language !== "bn") return;
 
-    const el = e.target;
+    const el = eventTarget(e);
     if (!isEditable(el)) return;
     if (!settings.candidateWindow) return;
     const info = getWordBeforeCaret(el);
