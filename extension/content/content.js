@@ -261,11 +261,21 @@
 
   function replaceWord(el, info, replacement) {
     if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
-      const val = el.value;
-      el.value = val.slice(0, info.start) + replacement + val.slice(info.end);
-      const caret = info.start + replacement.length;
-      el.setSelectionRange(caret, caret);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
+      // Prefer execCommand("insertText") on a native selection: it produces real
+      // beforeinput/input events, so editors that wrap a hidden textarea
+      // (CodeMirror, Ace, Monaco) and controlled React inputs stay in sync.
+      let ok = false;
+      try {
+        el.setSelectionRange(info.start, info.end);
+        ok = document.execCommand("insertText", false, replacement);
+      } catch (_) {}
+      if (!ok) {
+        const val = el.value;
+        el.value = val.slice(0, info.start) + replacement + val.slice(info.end);
+        const caret = info.start + replacement.length;
+        el.setSelectionRange(caret, caret);
+        el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: replacement }));
+      }
       return;
     }
     // contenteditable: use selection.modify + execCommand insertText so that
