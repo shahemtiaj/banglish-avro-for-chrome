@@ -143,12 +143,16 @@ export function transliterate(latin: string): string {
 export function suggest(latin: string): string[] {
   const key = latin.toLowerCase();
   const results: string[] = [transliterate(latin)];
+  if (dictionary[key] && !results.includes(dictionary[key])) results.unshift(dictionary[key]);
+  const hits: string[] = [];
   for (const k in dictionary) {
-    if (k.startsWith(key) && k !== key) {
-      const v = dictionary[k];
-      if (!results.includes(v)) results.push(v);
-      if (results.length >= 6) break;
-    }
+    if (k.length > key.length && k.startsWith(key)) hits.push(k);
   }
-  return results;
+  hits.sort((a, b) => a.length - b.length || (a < b ? -1 : 1));
+  for (const k of hits) {
+    const v = dictionary[k];
+    if (!results.includes(v)) results.push(v);
+    if (results.length >= 8) break;
+  }
+  return results.slice(0, 8);
 }

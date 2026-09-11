@@ -204,15 +204,21 @@
     const results = [];
     const primary = transliterate(latin);
     results.push(primary);
-    // Dictionary prefix matches (up to 6)
     const custom = settings.customDictionary || {};
     const pool = { ...dictionary, ...custom };
+    // exact match first
+    if (pool[key] && !results.includes(pool[key])) results.splice(0, 0, pool[key]);
+    // rank prefix matches by key length (closest to what was typed first)
     const hits = [];
     for (const k in pool) {
-      if (k.startsWith(key) && k !== key) hits.push(pool[k]);
-      if (hits.length >= 8) break;
+      if (k.length > key.length && k.startsWith(key)) hits.push(k);
     }
-    for (const h of hits) if (!results.includes(h)) results.push(h);
+    hits.sort((a, b) => a.length - b.length || (a < b ? -1 : 1));
+    for (const k of hits) {
+      const v = pool[k];
+      if (!results.includes(v)) results.push(v);
+      if (results.length >= 8) break;
+    }
     return results.slice(0, 8);
   }
 
@@ -255,11 +261,21 @@
 
   function replaceWord(el, info, replacement) {
     if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
-      const val = el.value;
-      el.value = val.slice(0, info.start) + replacement + val.slice(info.end);
-      const caret = info.start + replacement.length;
-      el.setSelectionRange(caret, caret);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
+      // Prefer execCommand("insertText") on a native selection: it produces real
+      // beforeinput/input events, so editors that wrap a hidden textarea
+      // (CodeMirror, Ace, Monaco) and controlled React inputs stay in sync.
+      let ok = false;
+      try {
+        el.setSelectionRange(info.start, info.end);
+        ok = document.execCommand("insertText", false, replacement);
+      } catch (_) {}
+      if (!ok) {
+        const val = el.value;
+        el.value = val.slice(0, info.start) + replacement + val.slice(info.end);
+        const caret = info.start + replacement.length;
+        el.setSelectionRange(caret, caret);
+        el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: replacement }));
+      }
       return;
     }
     // contenteditable: use selection.modify + execCommand insertText so that
@@ -509,152 +525,124 @@
 
   // ---- hidden iframe: intercept typing ----
   if (IS_DOCS) {
+    // Strategy: swallow the Latin keystrokes entirely (Docs never sees them),
+    // keep them in our own buffer, and insert only the finished Bangla word.
+    // This avoids synthetic-Backspace deletion, which Docs handles unreliably.
     let buf = "";
+    let docsIndex = 0;
     const WORD_RE = /^[A-Za-z^:0-9]$/;
 
     const target = () => document.activeElement || document.body;
-
-    function fireKey(type, key, code, keyCode) {
-      const ev = new KeyboardEvent(type, {
-        key, code, keyCode, which: keyCode,
-        bubbles: true, cancelable: true, composed: true,
-      });
-      target().dispatchEvent(ev);
-    }
-
-    function docsBackspace(n) {
-      for (let i = 0; i < n; i++) {
-        fireKey("keydown", "Backspace", "Backspace", 8);
-        fireKey("keyup", "Backspace", "Backspace", 8);
-        try { document.execCommand("delete", false); } catch (_) {}
-      }
-    }
 
     function docsInsert(text) {
       if (!text) return;
       const el = target();
       let ok = false;
-      try {
-        const dt = new DataTransfer();
-        dt.setData("text/plain", text);
-        dt.setData("text/html", text);
-        ok = !el.dispatchEvent(new ClipboardEvent("paste", {
-          clipboardData: dt, bubbles: true, cancelable: true,
-        }));
-      } catch (_) {}
+      try { ok = document.execCommand("insertText", false, text); } catch (_) {}
       if (!ok) {
-        try { document.execCommand("insertText", false, text); } catch (_) {}
+        try {
+          const dt = new DataTransfer();
+          dt.setData("text/plain", text);
+          el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+        } catch (_) {}
       }
+    }
+
+    function hideTop() {
+      try { window.top.postMessage({ __seDocs: 1, kind: "hide" }, "*"); } catch (_) {}
     }
 
     function sendPanel() {
-      if (!settings.candidateWindow || !buf || !/[A-Za-z]/.test(buf)) {
-        try { window.top.postMessage({ __seDocs: 1, kind: "hide" }, "*"); } catch (_) {}
-        return;
-      }
+      if (!buf || !/[A-Za-z]/.test(buf)) { hideTop(); return; }
       try {
-        window.top.postMessage({ __seDocs: 1, kind: "show", items: suggest(buf), index: 0 }, "*");
+        window.top.postMessage(
+          { __seDocs: 1, kind: "show", items: suggest(buf), index: docsIndex, raw: buf },
+          "*"
+        );
       } catch (_) {}
     }
 
-    let docsIndex = 0;
-    let docsItems = [];
+    function commit(text, tail) {
+      docsInsert((text || "") + (tail || ""));
+      buf = "";
+      docsIndex = 0;
+      hideTop();
+      if (text) { try { window.top.postMessage({ __seDocs: 1, kind: "stats", text }, "*"); } catch (_) {} }
+    }
 
     window.addEventListener("message", (ev) => {
       const d = ev.data;
       if (!d || d.__seDocs !== 1 || d.kind !== "commit") return;
-      if (!buf) return;
-      const text = d.text;
-      if (!text) return;
-      docsBackspace(buf.length);
-      docsInsert(text);
-      buf = "";
-      try { window.top.postMessage({ __seDocs: 1, kind: "stats", text }, "*"); } catch (_) {}
+      if (!buf || !d.text) return;
+      commit(d.text, "");
     });
 
     document.addEventListener("keydown", (e) => {
       if (!isDocsTextEventFrame()) return;
       if (!settings.enabled || settings.language !== "bn") { buf = ""; return; }
-      if (e.ctrlKey || e.metaKey || e.altKey) { buf = ""; return; }
+      if (e.ctrlKey || e.metaKey || e.altKey) { buf = ""; hideTop(); return; }
 
-      // panel navigation
-      if (buf && settings.candidateWindow) {
+      if (buf) {
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-          const dir = e.key === "ArrowDown" ? 1 : -1;
-          docsItems = suggest(buf);
-          docsIndex = (docsIndex + dir + docsItems.length) % docsItems.length;
+          const items = suggest(buf);
+          docsIndex = (docsIndex + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
           e.preventDefault();
           try { window.top.postMessage({ __seDocs: 1, kind: "index", index: docsIndex }, "*"); } catch (_) {}
           return;
         }
         if (e.key === "Tab") {
-          docsItems = suggest(buf);
-          const choice = docsItems[docsIndex];
-          if (choice) {
-            e.preventDefault();
-            docsBackspace(buf.length);
-            docsInsert(choice);
-            buf = "";
-            docsIndex = 0;
-            try { window.top.postMessage({ __seDocs: 1, kind: "hide" }, "*"); } catch (_) {}
-          }
+          e.preventDefault();
+          commit(suggest(buf)[docsIndex] || transliterate(buf), "");
           return;
         }
         if (e.key === "Escape") {
-          buf = "";
+          e.preventDefault();
+          commit(buf, ""); // give the raw Latin back so nothing is lost
+          return;
+        }
+        if (e.key === "Backspace") {
+          e.preventDefault();
+          buf = buf.slice(0, -1);
           docsIndex = 0;
-          try { window.top.postMessage({ __seDocs: 1, kind: "hide" }, "*"); } catch (_) {}
+          sendPanel();
           return;
         }
       }
 
-      if (e.key === "Backspace") {
-        buf = buf.slice(0, -1);
-        docsIndex = 0;
-        setTimeout(sendPanel, 0);
-        return;
-      }
-
+      // Buffer printable Latin — Docs must not receive it.
       if (e.key.length === 1 && WORD_RE.test(e.key)) {
+        e.preventDefault();
         buf += e.key;
         docsIndex = 0;
-        setTimeout(sendPanel, 0);
+        sendPanel();
         return;
       }
 
       const isSpace = e.key === " ";
       const isEnter = e.key === "Enter";
-      const isPunct = /^[.,!?;:'"()\-–—/]$/.test(e.key);
+      const isPunct = e.key.length === 1 && /[.,!?;:'"()\-–—/]/.test(e.key);
 
-      if (isSpace || isEnter || isPunct) {
+      if (isSpace || isPunct) {
+        e.preventDefault();
+        const tail = e.key === "." ? "।" : e.key;
+        commit(buf && /[A-Za-z]/.test(buf) ? transliterate(buf) : buf, tail);
+        return;
+      }
+      if (isEnter) {
         if (buf && /[A-Za-z]/.test(buf)) {
-          const bn = transliterate(buf);
-          const tail = isEnter ? "" : (e.key === "." ? "।" : e.key);
-          if (bn) {
-            e.preventDefault();
-            docsBackspace(buf.length);
-            docsInsert(bn + tail);
-            try { window.top.postMessage({ __seDocs: 1, kind: "stats", text: bn }, "*"); } catch (_) {}
-            if (isEnter) {
-              fireKey("keydown", "Enter", "Enter", 13);
-              fireKey("keyup", "Enter", "Enter", 13);
-            }
-          }
-        } else if (e.key === "." ) {
           e.preventDefault();
-          docsInsert("।");
+          commit(transliterate(buf), "\n");
+          return;
         }
         buf = "";
-        docsIndex = 0;
-        try { window.top.postMessage({ __seDocs: 1, kind: "hide" }, "*"); } catch (_) {}
+        hideTop();
         return;
       }
 
-      // any other key (arrows, home/end, etc.) resets the buffer
       if (e.key.length > 1) {
         buf = "";
         docsIndex = 0;
-        try { window.top.postMessage({ __seDocs: 1, kind: "hide" }, "*"); } catch (_) {}
+        hideTop();
       }
     }, true);
   }
@@ -684,7 +672,7 @@
     if (isDocsTextEventFrame()) return; // handled by the Google Docs adapter
     if (!settings.enabled || settings.language !== "bn") return;
 
-    const el = e.target;
+    const el = eventTarget(e);
     if (!isEditable(el)) return;
 
     // Panel navigation
@@ -722,14 +710,33 @@
     }
   }, true);
 
+  // Resolve the innermost target, seeing through shadow roots (web-component
+  // based editors) and falling back to the deep active element.
+  function eventTarget(e) {
+    let t = null;
+    try { const p = e.composedPath && e.composedPath(); if (p && p.length) t = p[0]; } catch (_) {}
+    if (!t || t.nodeType !== 1) t = e.target;
+    if (!isEditable(t)) {
+      let a = document.activeElement;
+      let guard = 0;
+      while (a && a.shadowRoot && a.shadowRoot.activeElement && guard++ < 10) a = a.shadowRoot.activeElement;
+      if (a && isEditable(a)) t = a;
+    }
+    return t;
+  }
+
   function insertAtCaret(el, str) {
     if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
-      const val = el.value;
-      const pos = el.selectionStart ?? val.length;
-      el.value = val.slice(0, pos) + str + val.slice(el.selectionEnd ?? pos);
-      const c = pos + str.length;
-      el.setSelectionRange(c, c);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
+      let ok = false;
+      try { ok = document.execCommand("insertText", false, str); } catch (_) {}
+      if (!ok) {
+        const val = el.value;
+        const pos = el.selectionStart ?? val.length;
+        el.value = val.slice(0, pos) + str + val.slice(el.selectionEnd ?? pos);
+        const c = pos + str.length;
+        el.setSelectionRange(c, c);
+        el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: str }));
+      }
       return;
     }
     const sel = window.getSelection();
@@ -750,7 +757,7 @@
     if (isDocsTextEventFrame()) return; // handled by the Google Docs adapter
     if (!settings.enabled || settings.language !== "bn") return;
 
-    const el = e.target;
+    const el = eventTarget(e);
     if (!isEditable(el)) return;
     if (!settings.candidateWindow) return;
     const info = getWordBeforeCaret(el);
