@@ -36,11 +36,17 @@
             <span class="track"><span class="thumb"></span></span>
           </label>
         </div>
-        <div class="segmented primary" role="tablist" aria-label="Language">
+        <div class="segmented primary" role="group" aria-label="Language">
           <button data-lang="bn" aria-pressed="true">বাংলা</button>
           <button data-lang="en" aria-pressed="false">English</button>
         </div>
         <p class="small muted shortcut-hint">Toggle anywhere with <kbd>Ctrl</kbd> + <kbd>Space</kbd></p>
+      </section>
+      <section class="card" id="site-card" hidden>
+        <div class="row">
+          <div class="row-label"><span class="label">Use on this site</span><span class="hint" id="site-host"></span></div>
+          <label class="switch" aria-label="Use on this site"><input type="checkbox" id="toggle-site" /><span class="track"><span class="thumb"></span></span></label>
+        </div>
       </section>
 
       <section class="card">
@@ -49,15 +55,15 @@
           <label class="switch"><input type="checkbox" id="toggle-cw" /><span class="track"><span class="thumb"></span></span></label>
         </div>
         <div class="row">
-          <div class="row-label"><span class="label">Auto correction</span><span class="hint">Fix common typos automatically</span></div>
+          <div class="row-label"><span class="label">Auto correction</span><span class="hint">Use the dictionary for correct spellings</span></div>
           <label class="switch"><input type="checkbox" id="toggle-ac" /><span class="track"><span class="thumb"></span></span></label>
         </div>
         <div class="row">
-          <div class="row-label"><span class="label">Auto space</span><span class="hint">Insert a space after each commit</span></div>
+          <div class="row-label"><span class="label">Auto space</span><span class="hint">Add a space after picking a suggestion</span></div>
           <label class="switch"><input type="checkbox" id="toggle-as" /><span class="track"><span class="thumb"></span></span></label>
         </div>
         <div class="row">
-          <div class="row-label"><span class="label">Remember last language</span><span class="hint">Restore last mode on new tabs</span></div>
+          <div class="row-label"><span class="label">Remember last language</span><span class="hint">Keep Bangla / English after restarting Chrome</span></div>
           <label class="switch"><input type="checkbox" id="toggle-remember" /><span class="track"><span class="thumb"></span></span></label>
         </div>
         <div class="row">
@@ -78,9 +84,9 @@
       </section>
 
       <footer class="footer">
-        <span class="muted small">v3.1.1</span>
+        <span class="muted small" id="version"></span>
         <span class="muted small">
-          Made with <span style="color:#FF5A5F">♥</span> by
+          Made with <span class="heart">♥</span> by
           <a href="https://shahemtiaj.com" target="_blank" rel="noopener" class="footer-link">Shah Emtiaj</a>
         </span>
       </footer>

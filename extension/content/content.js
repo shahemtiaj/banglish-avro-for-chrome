@@ -1,9 +1,26 @@
-// SE Banglish Avro — content script (self-contained, all frames)
-// No ES module imports (content scripts can't use them without bundling).
+// SE Banglish Avro — content script (all frames).
+// Depends on lib/engine.js, which the manifest loads first.
 
 (() => {
-  if (window.__SE_BANGLISH_LOADED__) return;
-  window.__SE_BANGLISH_LOADED__ = true;
+  const E = globalThis.SEBanglishEngine;
+  if (!E) return;
+
+  // ============================================================
+  // Single live instance per frame
+  // ============================================================
+  // After an extension update Chrome re-injects this file while the previous
+  // copy is still attached to the page with a dead chrome.* API. The new copy
+  // asks any older one to detach, so a keystroke is never handled twice.
+  const TEARDOWN_EVENT = "se-banglish-teardown";
+  const alive = () => { try { return !!chrome.runtime.id; } catch (_) { return false; } };
+  const previous = window.__SE_BANGLISH__;
+  if (previous && previous.alive && previous.alive()) return;
+  try { if (previous && previous.teardown) previous.teardown(); } catch (_) {}
+  try { document.dispatchEvent(new CustomEvent(TEARDOWN_EVENT)); } catch (_) {}
+
+  const ac = new AbortController();
+  const on = (target, type, fn, capture) =>
+    target.addEventListener(type, fn, { capture: !!capture, signal: ac.signal });
 
   // ============================================================
   // Settings
@@ -15,320 +32,278 @@
     autoCorrect: true,
     autoSpace: false,
     floatingIndicator: true,
+    theme: "system",
     customDictionary: {},
+    disabledSites: [],
   };
   const settings = { ...DEFAULTS };
-  let dictionary = {};
+  const IS_TOP = (() => { try { return window.top === window; } catch (_) { return false; } })();
+
+  // Per-site switch follows the page the user sees, so iframes obey the top page.
+  const SITE_HOST = (() => {
+    try {
+      if (IS_TOP) return location.hostname;
+      const anc = location.ancestorOrigins;
+      if (anc && anc.length) return new URL(anc[anc.length - 1]).hostname;
+    } catch (_) {}
+    return location.hostname;
+  })();
+  let siteOff = false;
+  let learned = {};
+
+  function applySettings() {
+    E.setCustomDictionary(settings.customDictionary || {});
+    E.setOptions({ autoCorrect: settings.autoCorrect !== false });
+    siteOff = Array.isArray(settings.disabledSites) && !!SITE_HOST && settings.disabledSites.includes(SITE_HOST);
+  }
+  const active = () => settings.enabled && settings.language === "bn" && !siteOff;
+
+  function onStorageChanged(changes, area) {
+    if (area === "sync") {
+      for (const k in changes) {
+        if (k in DEFAULTS) settings[k] = changes[k].newValue === undefined ? DEFAULTS[k] : changes[k].newValue;
+      }
+      applySettings();
+      if (!active()) hidePanel();
+      if ("language" in changes || "enabled" in changes || "disabledSites" in changes) flashIndicator(false);
+    } else if (area === "local" && changes.learned) {
+      learned = changes.learned.newValue || {};
+      E.setLearned(learned);
+    }
+  }
+  function onMessage(msg) {
+    if (msg && msg.type === "SE_LANG_CHANGED") {
+      settings.language = msg.language;
+      flashIndicator(true);
+    }
+  }
 
   try {
-    chrome.storage.sync.get(DEFAULTS, (s) => Object.assign(settings, s));
-    chrome.storage.onChanged.addListener((ch, area) => {
-      if (area !== "sync") return;
-      for (const k in ch) settings[k] = ch[k].newValue;
-      updateIndicator();
-    });
-    chrome.runtime.onMessage.addListener((msg) => {
-      if (msg?.type === "SE_LANG_CHANGED") {
-        settings.language = msg.language;
-        flashIndicator(true);
-      }
-    });
-    fetch(chrome.runtime.getURL("dictionary/core.json"))
-      .then((r) => r.json())
-      .then((d) => (dictionary = d))
-      .catch(() => {});
+    chrome.storage.sync.get(DEFAULTS, (s) => { Object.assign(settings, s); applySettings(); });
+    chrome.storage.local.get({ learned: {} }, (s) => { learned = s.learned || {}; E.setLearned(learned); });
+    chrome.storage.onChanged.addListener(onStorageChanged);
+    chrome.runtime.onMessage.addListener(onMessage);
   } catch (_) {
-    // running outside extension context (e.g. dev)
+    // running outside an extension context (tests)
+  }
+
+  // The 200 KB dictionary is only requested by frames the user actually types
+  // in, and comes from the service worker rather than a web-accessible URL.
+  let dictRequested = false;
+  function ensureDictionary() {
+    if (dictRequested) return;
+    dictRequested = true;
+    try {
+      chrome.runtime.sendMessage({ type: "SE_GET_DICTIONARY" }, (dict) => {
+        if (chrome.runtime.lastError || !dict) { dictRequested = false; return; }
+        E.setDictionary(dict);
+      });
+    } catch (_) { dictRequested = false; }
   }
 
   // ============================================================
-  // Avro-style phonetic engine
+  // Editable detection
   // ============================================================
-  const CONSONANTS = {
-    "kh": "খ", "gh": "ঘ", "Ng": "ঙ",
-    "chh": "ছ", "ch": "ছ", "jh": "ঝ", "NG": "ঞ",
-    "Th": "ঠ", "Dh": "ঢ",
-    "th": "থ", "dh": "ধ",
-    "ph": "ফ", "bh": "ভ",
-    "sh": "শ", "Sh": "ষ", "ss": "স",
-    "Rh": "ঢ়",
-    "k": "ক", "g": "গ",
-    "c": "চ", "j": "জ",
-    "T": "ট", "D": "ড", "N": "ণ",
-    "t": "ত", "d": "দ", "n": "ন",
-    "p": "প", "f": "ফ", "b": "ব", "v": "ভ", "m": "ম",
-    "z": "য", "y": "য়", "l": "ল",
-    "s": "স", "h": "হ",
-    "R": "ড়", "Y": "য়", "w": "ওয়",
-    "ng": "ং",
-  };
-  // Special conjuncts (juktakkhor) — checked before generic consonants.
-  // Each maps a Banglish cluster to the exact Bangla ligature.
-  const CLUSTERS = {
-    "kkh": "ক্ষ", "ksh": "ক্ষ", "kSh": "ক্ষ", "kx": "ক্ষ",
-    "jNG": "জ্ঞ", "gg": "জ্ঞ", "gy": "জ্ঞ", "jny": "জ্ঞ",
-    "hm": "হ্ম", "hn": "হ্ন", "hN": "হ্ণ", "hl": "হ্ল", "hb": "হ্ব", "hw": "হ্ব", "hy": "হ্য", "hr": "হ্র",
-    "ttw": "ত্ত্ব", "ttv": "ত্ত্ব", "tm": "ত্ম", "tn": "ত্ন", "ty": "ত্য", "tr": "ত্র",
-    "shc": "শ্চ", "shch": "শ্ছ", "nc": "ঞ্চ", "nj": "ঞ্জ", "nch": "ঞ্ছ", "nchh": "ঞ্ছ",
-    "ND": "ণ্ড", "NT": "ণ্ট", "NTh": "ণ্ঠ", "NDh": "ণ্ঢ", "Nn": "ণ্ন", "Nm": "ণ্ম",
-    "ShT": "ষ্ট", "ShTh": "ষ্ঠ", "ShN": "ষ্ণ", "Shp": "ষ্প", "Shk": "ষ্ক", "Shm": "ষ্ম", "Shl": "ষ্ল",
-    "shT": "ষ্ট", "shTh": "ষ্ঠ", "shN": "ষ্ণ",
-    "st": "স্ত", "sth": "স্থ", "sn": "স্ন", "sp": "স্প", "sk": "স্ক", "sf": "স্ফ", "sm": "স্ম", "sl": "স্ল", "sr": "স্র", "sw": "স্ব",
-    "sht": "স্ত", "shth": "স্থ", "shn": "স্ন",
-    "ngg": "ঙ্গ", "ngk": "ঙ্ক", "ngkh": "ঙ্খ", "nggh": "ঙ্ঘ",
-    "nt": "ন্ত", "nd": "ন্দ", "ndh": "ন্ধ", "nn": "ন্ন", "nb": "ন্ব", "nm": "ন্ম", "ntr": "ন্ত্র", "ndr": "ন্দ্র",
-    "pn": "প্ন", "pl": "প্ল", "ps": "প্স", "pt": "প্ত",
-    "mn": "ম্ন", "mp": "ম্প", "mb": "ম্ব", "mbh": "ম্ভ", "mr": "ম্র", "ml": "ম্ল",
-    "lp": "ল্প", "lk": "ল্ক", "lT": "ল্ট", "lD": "ল্ড", "lm": "ল্ম", "lb": "ল্ব",
-    "ddh": "দ্ধ", "db": "দ্ব", "dv": "দ্ব", "dr": "দ্র", "dy": "দ্য", "dm": "দ্ম",
-    "dhb": "ধ্ব", "dhr": "ধ্র", "dhy": "ধ্য",
-    "bdh": "ব্ধ", "br": "ব্র", "by": "ব্য", "bl": "ব্ল",
-    "cc": "চ্চ", "cch": "চ্ছ", "cchh": "চ্ছ",
-    "jj": "জ্জ", "jjh": "জ্ঝ", "jy": "জ্য", "jr": "জ্র",
-    "TT": "ট্ট", "Tr": "ট্র",
-    "DD": "ড্ড", "Dr": "ড্র",
-    "kk": "ক্ক", "kT": "ক্ট", "kt": "ক্ত", "kr": "ক্র", "kl": "ক্ল", "kb": "ক্ব", "km": "ক্ম", "ky": "ক্য",
-    "gdh": "গ্ধ", "gn": "গ্ন", "gm": "গ্ম", "gr": "গ্র", "gl": "গ্ল", "gb": "গ্ব",
-    "ghn": "ঘ্ন", "ghr": "ঘ্র",
-    "shr": "শ্র", "shb": "শ্ব", "shy": "শ্য",
-  };
-  const VOWELS = {
-    "rri": { ind: "ঋ", kar: "ৃ" },
-    "OI":  { ind: "ঐ", kar: "ৈ" },
-    "oi":  { ind: "ঐ", kar: "ৈ" },
-    "OU":  { ind: "ঔ", kar: "ৌ" },
-    "ou":  { ind: "ঔ", kar: "ৌ" },
-    "aa":  { ind: "আ", kar: "া" },
-    "A":   { ind: "আ", kar: "া" },
-    "a":   { ind: "আ", kar: "া" },
-    "I":   { ind: "ঈ", kar: "ী" },
-    "ii":  { ind: "ঈ", kar: "ী" },
-    "i":   { ind: "ই", kar: "ি" },
-    "U":   { ind: "ঊ", kar: "ূ" },
-    "uu":  { ind: "ঊ", kar: "ূ" },
-    "u":   { ind: "উ", kar: "ু" },
-    "E":   { ind: "এ", kar: "ে" },
-    "e":   { ind: "এ", kar: "ে" },
-    "O":   { ind: "ও", kar: "ো" },
-    "o":   { ind: "অ", kar: "" }, // inherent
-  };
-  const SYMBOLS = {
-    "^": "ঁ",
-    ":": "ঃ",
-  };
-  const PUNCT_MAP = { ".": "।" };
-  const CASE_INSENSITIVE = /[JCKGBPMLHFVWZ]/g;
-  function normalizeCase(s) { return s.replace(CASE_INSENSITIVE, (c) => c.toLowerCase()); }
-  // Special: "rr" before consonant = reph (র্)
-  const TOKENS = [
-    ...Object.keys(VOWELS),
-    ...Object.keys(CONSONANTS),
-    ...Object.keys(CLUSTERS),
-    ...Object.keys(SYMBOLS),
-    "rr",
-    "r",
-  ].sort((a, b) => b.length - a.length);
+  const TEXT_INPUT_TYPES = new Set(["text", "search", ""]);
+  const SKIP_INPUTMODE = new Set(["numeric", "decimal", "tel", "email", "url"]);
+  const SKIP_AUTOCOMPLETE = /(^|\s)(username|email|current-password|new-password|one-time-code|url|tel[\w-]*|cc-[\w-]+|postal-code|bday[\w-]*)(\s|$)/i;
+  const SKIP_NAME = /^(e-?mail|user[-_]?(name|id)?|login|passw(or)?d|otp|captcha|phone|mobile|url)$/i;
 
-  const DIGIT_MAP = { "0":"০","1":"১","2":"২","3":"৩","4":"৪","5":"৫","6":"৬","7":"৭","8":"৮","9":"৯" };
+  const isField = (el) => el.tagName === "TEXTAREA" || el.tagName === "INPUT";
 
-  function transliterate(latin) {
-    if (!latin) return "";
-    // whole-word dictionary override (case-insensitive)
-    const key = latin.toLowerCase();
-    if (settings.customDictionary && settings.customDictionary[key]) return settings.customDictionary[key];
-    if (dictionary[key]) return dictionary[key];
-    latin = normalizeCase(latin);
-    let i = 0, out = "", prev = "start";
-    while (i < latin.length) {
-      let matched = null;
-      for (const t of TOKENS) {
-        if (latin.startsWith(t, i)) { matched = t; break; }
-      }
-      if (!matched) {
-        const ch = latin[i];
-        if (DIGIT_MAP[ch]) { out += DIGIT_MAP[ch]; prev = "other"; }
-        else if (PUNCT_MAP[ch]) { out += PUNCT_MAP[ch]; prev = "other"; }
-        else { out += ch; prev = "other"; }
-        i++;
-        continue;
-      }
-      i += matched.length;
-      if (CLUSTERS[matched]) {
-        const g = CLUSTERS[matched];
-        out += (prev === "consonant") ? "্" + g : g;
-        const last = g[g.length - 1];
-        // Cluster ends with a kar → vowel state; otherwise "cluster" (a completed
-        // ligature: next vowel still becomes a kar, but next consonant does NOT
-        // auto-conjunct — fixes bybohar → ব্যবহার instead of ব্য্বহার).
-        prev = /[\u09BE-\u09CC\u09D7]/.test(last) ? "vowel" : "cluster";
-        continue;
-      }
-      if (matched === "rr") {
-        // reph — if followed by a consonant token, emit র্ and skip auto-hasanta on next
-        out += "র্";
-        prev = "ref";
-        continue;
-      }
-      if (matched === "r") {
-        // regular র
-        if (prev === "consonant") out += "্র";
-        else out += "র";
-        prev = "consonant";
-        continue;
-      }
-      if (VOWELS[matched]) {
-        const v = VOWELS[matched];
-        out += (prev === "consonant" || prev === "ref" || prev === "cluster") ? v.kar : v.ind;
-        prev = "vowel";
-        continue;
-      }
-      if (CONSONANTS[matched]) {
-        const c = CONSONANTS[matched];
-        if (matched === "ng") { out += c; prev = "vowel"; continue; }
-        if (prev === "consonant") out += "্" + c;
-        else out += c;
-        prev = "consonant";
-        continue;
-      }
-      if (SYMBOLS[matched]) {
-        out += SYMBOLS[matched];
-        // symbols don't change prev meaningfully
-        continue;
-      }
-    }
-    return out;
-  }
-
-  function suggest(latin) {
-    const key = latin.toLowerCase();
-    const results = [];
-    const primary = transliterate(latin);
-    results.push(primary);
-    const custom = settings.customDictionary || {};
-    const pool = { ...dictionary, ...custom };
-    // exact match first
-    if (pool[key] && !results.includes(pool[key])) results.splice(0, 0, pool[key]);
-    // rank prefix matches by key length (closest to what was typed first)
-    const hits = [];
-    for (const k in pool) {
-      if (k.length > key.length && k.startsWith(key)) hits.push(k);
-    }
-    hits.sort((a, b) => a.length - b.length || (a < b ? -1 : 1));
-    for (const k of hits) {
-      const v = pool[k];
-      if (!results.includes(v)) results.push(v);
-      if (results.length >= 8) break;
-    }
-    return results.slice(0, 8);
-  }
-
-  // ============================================================
-  // Editable detection + word replacement
-  // ============================================================
   function isEditable(el) {
-    if (!el) return false;
+    if (!el || el.nodeType !== 1) return false;
     if (el.isContentEditable) return true;
-    const tag = el.tagName;
-    if (tag === "TEXTAREA") return !el.readOnly && !el.disabled;
-    if (tag === "INPUT") {
-      const t = (el.type || "text").toLowerCase();
-      return ["text","search","url","email","tel",""].includes(t) && !el.readOnly && !el.disabled;
-    }
-    return false;
+    if (el.tagName === "TEXTAREA") return !el.readOnly && !el.disabled;
+    if (el.tagName !== "INPUT") return false;
+    if (el.readOnly || el.disabled) return false;
+    if (!TEXT_INPUT_TYPES.has((el.type || "text").toLowerCase())) return false;
+    // Bangla has no business in e-mail, username, OTP, phone or card fields.
+    if (SKIP_INPUTMODE.has((el.inputMode || "").toLowerCase())) return false;
+    if (SKIP_AUTOCOMPLETE.test(el.autocomplete || "")) return false;
+    if (SKIP_NAME.test(el.name || "") || SKIP_NAME.test(el.id || "")) return false;
+    return true;
   }
 
-  function getWordBeforeCaret(el) {
-    if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
-      const val = el.value;
-      const pos = el.selectionStart ?? val.length;
-      let start = pos;
-      while (start > 0 && /[A-Za-z^:0-9]/.test(val[start - 1])) start--;
-      return { text: val.slice(start, pos), start, end: pos };
+  // Resolve the innermost target, seeing through shadow roots (web-component
+  // based editors) and falling back to the deep active element.
+  function eventTarget(e) {
+    let t = null;
+    try { const p = e.composedPath && e.composedPath(); if (p && p.length) t = p[0]; } catch (_) {}
+    if (!t || t.nodeType !== 1) t = e.target;
+    if (!isEditable(t)) {
+      const a = deepActiveElement();
+      if (a && isEditable(a)) t = a;
     }
-    // contenteditable
+    return t;
+  }
+  function deepActiveElement() {
+    let a = document.activeElement;
+    let guard = 0;
+    while (a && a.shadowRoot && a.shadowRoot.activeElement && guard++ < 10) a = a.shadowRoot.activeElement;
+    return a;
+  }
+
+  // ============================================================
+  // Reading and replacing text at the caret
+  // ============================================================
+  // Returns the text in front of the caret: { text, pos, node? }.
+  function beforeCaret(el) {
+    if (isField(el)) {
+      const pos = el.selectionStart == null ? el.value.length : el.selectionStart;
+      if (el.selectionEnd != null && el.selectionEnd !== pos) return null;
+      return { text: el.value, pos };
+    }
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return null;
     const range = sel.getRangeAt(0);
     if (!range.collapsed) return null;
     const node = range.startContainer;
     if (node.nodeType !== Node.TEXT_NODE) return null;
-    const offset = range.startOffset;
-    const text = node.data;
-    let start = offset;
-    while (start > 0 && /[A-Za-z^:0-9]/.test(text[start - 1])) start--;
-    return { text: text.slice(start, offset), start, end: offset, node };
+    return { text: node.data, pos: range.startOffset, node };
   }
 
-  function replaceWord(el, info, replacement) {
-    if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
-      // Prefer execCommand("insertText") on a native selection: it produces real
-      // beforeinput/input events, so editors that wrap a hidden textarea
-      // (CodeMirror, Ace, Monaco) and controlled React inputs stay in sync.
-      let ok = false;
-      try {
-        el.setSelectionRange(info.start, info.end);
-        ok = document.execCommand("insertText", false, replacement);
-      } catch (_) {}
-      if (!ok) {
-        const val = el.value;
-        el.value = val.slice(0, info.start) + replacement + val.slice(info.end);
-        const caret = info.start + replacement.length;
-        el.setSelectionRange(caret, caret);
-        el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: replacement }));
-      }
-      return;
-    }
-    // contenteditable: use selection.modify + execCommand insertText so that
-    // frameworks like Lexical (Facebook/Messenger), Draft.js, Slate, ProseMirror
-    // and CKEditor observe a real beforeinput event and keep their model in sync.
-    const sel = window.getSelection();
-    if (!sel) return;
-    const len = (info.text || "").length;
-    if (len > 0) {
-      // Collapse to caret first, then extend backward by exact char count.
-      try { sel.collapseToEnd(); } catch (_) {}
-      for (let i = 0; i < len; i++) sel.modify("extend", "backward", "character");
-    }
-    let inserted = false;
-    try {
-      inserted = document.execCommand("insertText", false, replacement);
-    } catch (_) {}
-    if (!inserted) {
-      // Fallback for editors that reject execCommand
-      const range = sel.rangeCount ? sel.getRangeAt(0) : document.createRange();
+  function getWordBeforeCaret(el) {
+    const ctx = beforeCaret(el);
+    if (!ctx) return null;
+    let start = ctx.pos;
+    while (start > 0 && E.isWordChar(ctx.text[start - 1])) start--;
+    return { text: ctx.text.slice(start, ctx.pos), start, end: ctx.pos, node: ctx.node };
+  }
+
+  // Our own edits fire input events; this keeps the input listener out of them.
+  let selfEdit = 0;
+
+  function insertText(el, str) {
+    let ok = false;
+    try { ok = document.execCommand("insertText", false, str); } catch (_) {}
+    if (ok) return;
+    if (isField(el)) {
+      const val = el.value;
+      const s = el.selectionStart == null ? val.length : el.selectionStart;
+      const e2 = el.selectionEnd == null ? s : el.selectionEnd;
+      el.value = val.slice(0, s) + str + val.slice(e2);
+      const c = s + str.length;
+      el.setSelectionRange(c, c);
+    } else {
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const range = sel.getRangeAt(0);
       range.deleteContents();
-      const textNode = document.createTextNode(replacement);
-      range.insertNode(textNode);
+      const node = document.createTextNode(str);
+      range.insertNode(node);
       const r = document.createRange();
-      r.setStart(textNode, textNode.length);
+      r.setStart(node, node.length);
       r.collapse(true);
       sel.removeAllRanges();
       sel.addRange(r);
-      el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: replacement }));
     }
+    el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: str }));
+  }
+
+  // Replace the `count` UTF-16 units before the caret with `replacement`.
+  // execCommand("insertText") is used on a real selection so that React inputs,
+  // CodeMirror/Monaco textareas and rich editors (Lexical, Draft.js, Slate,
+  // ProseMirror, CKEditor) see a genuine beforeinput/input and stay in sync.
+  function replaceBeforeCaret(el, info, replacement, exactRange) {
+    selfEdit++;
+    try {
+      const count = info.end - info.start;
+      if (isField(el)) {
+        try { el.setSelectionRange(info.start, info.end); } catch (_) {}
+      } else {
+        const sel = window.getSelection();
+        if (!sel) return;
+        if (exactRange && info.node) {
+          // Bangla text: caret stops are grapheme clusters, so select by offsets.
+          sel.setBaseAndExtent(info.node, info.start, info.node, info.end);
+        } else {
+          try { sel.collapseToEnd(); } catch (_) {}
+          for (let i = 0; i < count; i++) sel.modify("extend", "backward", "character");
+        }
+      }
+      insertText(el, replacement);
+    } finally {
+      selfEdit--;
+    }
+  }
+
+  // ============================================================
+  // Caret position (for placing the candidate window)
+  // ============================================================
+  const MIRROR_PROPS = [
+    "direction", "boxSizing", "width", "height", "overflowX", "overflowY",
+    "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth", "borderStyle",
+    "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+    "fontStyle", "fontVariant", "fontWeight", "fontStretch", "fontSize", "fontSizeAdjust",
+    "lineHeight", "fontFamily", "textAlign", "textTransform", "textIndent",
+    "letterSpacing", "wordSpacing", "tabSize",
+  ];
+
+  function fieldCaretRect(el) {
+    const box = el.getBoundingClientRect();
+    try {
+      const pos = el.selectionStart == null ? el.value.length : el.selectionStart;
+      const cs = getComputedStyle(el);
+      const mirror = document.createElement("div");
+      const st = mirror.style;
+      for (const p of MIRROR_PROPS) st[p] = cs[p];
+      st.position = "absolute"; st.visibility = "hidden"; st.pointerEvents = "none";
+      st.top = "0"; st.left = "-99999px";
+      st.whiteSpace = el.tagName === "INPUT" ? "pre" : "pre-wrap";
+      st.overflowWrap = "break-word";
+      if (el.tagName === "INPUT") st.overflow = "hidden";
+      mirror.textContent = el.value.slice(0, pos);
+      const marker = document.createElement("span");
+      marker.textContent = el.value.slice(pos, pos + 1) || ".";
+      mirror.appendChild(marker);
+      (document.body || document.documentElement).appendChild(mirror);
+      const lineHeight = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.25 || 18;
+      let top = box.top + marker.offsetTop + (parseFloat(cs.borderTopWidth) || 0) - el.scrollTop;
+      let left = box.left + marker.offsetLeft + (parseFloat(cs.borderLeftWidth) || 0) - el.scrollLeft;
+      mirror.remove();
+      top = Math.min(Math.max(top, box.top), Math.max(box.top, box.bottom - lineHeight));
+      left = Math.min(Math.max(left, box.left), box.right);
+      return { left, right: left, top, bottom: top + lineHeight, width: 0, height: lineHeight };
+    } catch (_) {
+      return box;
+    }
+  }
+
+  function caretRect(target) {
+    if (isField(target)) return fieldCaretRect(target);
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount) {
+      const r = sel.getRangeAt(0).getBoundingClientRect();
+      if (r.width || r.height) return r;
+    }
+    return target.getBoundingClientRect();
   }
 
   // ============================================================
   // Candidate window (shadow DOM)
   // ============================================================
   let panelHost = null;
-  let panelRoot = null;
   let panelListEl = null;
   let panelItems = [];
   let panelIndex = 0;
   let panelTarget = null;
-  let panelInfo = null;
+  let panelLatin = "";
+
+  const isDark = () =>
+    settings.theme === "dark" ||
+    (settings.theme !== "light" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
 
   function ensurePanel() {
     if (panelHost) return;
     panelHost = document.createElement("div");
-    panelHost.style.cssText = "position:fixed;top:0;left:0;width:0;height:0;z-index:2147483647;pointer-events:none;";
-    panelRoot = panelHost.attachShadow({ mode: "open" });
-    panelRoot.innerHTML = `
+    panelHost.style.cssText = "all:initial;position:fixed;top:0;left:0;width:0;height:0;z-index:2147483647;pointer-events:none;";
+    const root = panelHost.attachShadow({ mode: "open" });
+    root.innerHTML = `
       <style>
         .panel {
           position: fixed; min-width: 180px; max-width: 320px;
-          background: rgba(255,255,255,0.92);
+          background: rgba(255,255,255,0.96);
           backdrop-filter: blur(20px) saturate(180%);
           -webkit-backdrop-filter: blur(20px) saturate(180%);
           color: #111;
@@ -337,79 +312,56 @@
           border: 1px solid rgba(0,0,0,0.06);
           padding: 6px;
           font: 14px/1.4 "Noto Sans Bengali", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-          pointer-events: auto;
+          pointer-events: none;
           opacity: 0; transform: translateY(4px) scale(0.98);
-          transition: opacity 160ms ease, transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+          transition: opacity 120ms ease, transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
           max-height: 300px; overflow-y: auto;
         }
-        .panel.open { opacity: 1; transform: translateY(0) scale(1); }
-        @media (prefers-color-scheme: dark) {
-          .panel { background: rgba(30,30,30,0.92); color: #FAFAFA; border-color: rgba(255,255,255,0.08); }
-        }
+        .panel.open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+        .panel.dark { background: rgba(30,30,30,0.96); color: #FAFAFA; border-color: rgba(255,255,255,0.08); }
         .item {
           display: flex; align-items: center; gap: 10px;
-          padding: 8px 10px; border-radius: 10px; cursor: pointer;
-          transition: background 120ms ease;
+          padding: 7px 10px; border-radius: 10px; cursor: pointer;
         }
-        .item:hover { background: rgba(255,159,28,0.12); }
-        .item.active { background: linear-gradient(135deg, #FF9F1C, #FFC857); color: #fff; }
+        .item:hover { background: rgba(255,159,28,0.14); }
+        .item.active { background: linear-gradient(135deg, #F28C0F, #F5A623); color: #fff; }
         .num { font: 500 11px "Inter", sans-serif; opacity: 0.6; min-width: 14px; }
-        .item.active .num { opacity: 0.95; color: #fff; }
+        .item.active .num { opacity: 0.95; }
         .txt { flex: 1; font-size: 15px; }
+        .item.latin .txt { font-size: 13px; opacity: 0.75; }
+        @media (prefers-reduced-motion: reduce) { .panel { transition: none; } }
       </style>
       <div class="panel" role="listbox" aria-label="Bangla suggestions"></div>
     `;
-    panelListEl = panelRoot.querySelector(".panel");
+    panelListEl = root.querySelector(".panel");
     document.documentElement.appendChild(panelHost);
-  }
-
-  function showPanel(target, info, items) {
-    ensurePanel();
-    panelTarget = target;
-    panelInfo = info;
-    panelItems = items;
-    panelIndex = 0;
-    renderPanel();
-    positionPanel(target);
-    requestAnimationFrame(() => panelListEl.classList.add("open"));
   }
 
   function renderPanel() {
     if (!panelListEl) return;
-    panelListEl.innerHTML = "";
+    panelListEl.classList.toggle("dark", isDark());
+    panelListEl.textContent = "";
     panelItems.forEach((txt, i) => {
       const row = document.createElement("div");
-      row.className = "item" + (i === panelIndex ? " active" : "");
+      row.className = "item" + (i === panelIndex ? " active" : "") + (txt === panelLatin ? " latin" : "");
       row.setAttribute("role", "option");
-      row.innerHTML = `<span class="num">${i + 1}</span><span class="txt"></span>`;
-      row.querySelector(".txt").textContent = txt;
-      row.addEventListener("mousedown", (e) => {
-        e.preventDefault();
-        commitPanel(i);
-      });
+      row.setAttribute("aria-selected", i === panelIndex ? "true" : "false");
+      const num = document.createElement("span");
+      num.className = "num";
+      num.textContent = String(i + 1);
+      const label = document.createElement("span");
+      label.className = "txt";
+      label.textContent = txt;
+      row.append(num, label);
+      row.addEventListener("mousedown", (e) => { e.preventDefault(); commitPanel(i); });
       panelListEl.appendChild(row);
     });
-  }
-
-  function positionPanel(target) {
-    let rect;
-    if (target.tagName === "TEXTAREA" || target.tagName === "INPUT") {
-      rect = target.getBoundingClientRect();
-    } else {
-      const sel = window.getSelection();
-      if (sel && sel.rangeCount) {
-        const r = sel.getRangeAt(0).getBoundingClientRect();
-        rect = r.width || r.height ? r : target.getBoundingClientRect();
-      } else {
-        rect = target.getBoundingClientRect();
-      }
-    }
-    placePanel(rect);
+    const activeRow = panelListEl.children[panelIndex];
+    if (activeRow && activeRow.scrollIntoView) activeRow.scrollIntoView({ block: "nearest" });
   }
 
   function placePanel(rect) {
-    // Measure panel then flip/shift to stay inside viewport
-
+    // Measure off-screen, then flip / shift to stay inside the viewport.
     panelListEl.style.left = "-9999px";
     panelListEl.style.top = "0px";
     const vw = window.innerWidth, vh = window.innerHeight;
@@ -428,53 +380,219 @@
     panelListEl.style.top = top + "px";
   }
 
+  function showPanel(target, latin, items) {
+    ensurePanel();
+    panelTarget = target;
+    panelLatin = latin;
+    panelItems = items;
+    panelIndex = 0;
+    renderPanel();
+    placePanel(caretRect(target));
+    panelListEl.classList.add("open");
+  }
+
   function hidePanel() {
     docsPanelActive = false;
-    if (!panelListEl) return;
-    panelListEl.classList.remove("open");
     panelItems = [];
     panelTarget = null;
-    panelInfo = null;
+    panelLatin = "";
+    if (panelListEl) panelListEl.classList.remove("open");
+  }
+
+  const panelOpenFor = (el) => panelItems.length > 0 && panelTarget === el;
+
+  // ============================================================
+  // Committing, learning and undo
+  // ============================================================
+  let lastCommit = null; // { el, latin, bangla } — for Backspace undo
+
+  function remember(latin, choice) {
+    const key = latin.toLowerCase();
+    if (learned[key] === choice) return;
+    const keys = Object.keys(learned);
+    if (keys.length >= 500) delete learned[keys[0]];
+    learned[key] = choice;
+    E.setLearned(learned);
+    try { chrome.storage.local.set({ learned }); } catch (_) {}
+  }
+
+  // Convert the Latin word before the caret. Returns true if text changed.
+  function commitWord(el, choice) {
+    const info = getWordBeforeCaret(el);
+    if (!info || !info.text || !E.hasLetter(info.text)) return false;
+    const bn = choice || E.transliterate(info.text);
+    if (!bn || bn === info.text) return false;
+    replaceBeforeCaret(el, info, bn, false);
+    lastCommit = { el, latin: info.text, bangla: bn };
+    updateStats(bn);
+    return true;
   }
 
   function commitPanel(index) {
+    const choice = panelItems[index];
     if (docsPanelActive) {
-      const choice = panelItems[index];
       docsPostToFrame({ kind: "commit", index, text: choice });
       hidePanel();
       return;
     }
-    if (!panelTarget || !panelInfo) return hidePanel();
-    const choice = panelItems[index];
-    if (!choice) return hidePanel();
-    // refresh info in case caret moved
-    const info = getWordBeforeCaret(panelTarget);
-    if (info) replaceWord(panelTarget, info, choice);
-    updateStats(choice);
+    const el = panelTarget;
+    const latin = panelLatin;
     hidePanel();
+    if (!el || !choice) return;
+    // Picking anything but the default teaches the engine; picking the Latin
+    // original teaches it to leave that word alone.
+    if (index > 0) remember(latin, choice);
+    if (choice === latin) {
+      if (settings.autoSpace) { selfEdit++; try { insertText(el, " "); } finally { selfEdit--; } }
+      return;
+    }
+    commitWord(el, choice + (settings.autoSpace ? " " : ""));
+    if (lastCommit && settings.autoSpace) lastCommit.bangla = choice;
   }
+
+  // Backspace right after a conversion reopens the word as it was typed, so it
+  // can be extended (desh → deshe), re-picked, or kept in English.
+  function undoCommit(el, commit) {
+    const ctx = beforeCaret(el);
+    if (!ctx) return false;
+    const head = ctx.text.slice(0, ctx.pos);
+    let tail = "";
+    if (!head.endsWith(commit.bangla)) {
+      const last = head.slice(-1);
+      if (!last || E.isWordChar(last) || !head.slice(0, -1).endsWith(commit.bangla)) return false;
+      tail = last;
+    }
+    const len = commit.bangla.length + tail.length;
+    replaceBeforeCaret(el, { start: ctx.pos - len, end: ctx.pos, node: ctx.node }, commit.latin, true);
+    refreshPanel(el);
+    return true;
+  }
+
+  // "." becomes a dari, except where a real full stop is clearly meant.
+  function handleDot(el, wordCommitted) {
+    const ctx = beforeCaret(el);
+    if (!ctx) return false;
+    const prevChar = ctx.text.slice(ctx.pos - 1, ctx.pos);
+    if (prevChar === "।") {
+      // a second dot turns the dari back into dots: "..." stays an ellipsis
+      replaceBeforeCaret(el, { start: ctx.pos - 1, end: ctx.pos, node: ctx.node }, "..", true);
+      return true;
+    }
+    if (prevChar === "." || prevChar === "" || /\s/.test(prevChar)) return false;
+    if (!wordCommitted && /[0-9০-৯A-Za-z]/.test(prevChar)) return false; // 3.5, v2.1, file.txt
+    selfEdit++;
+    try { insertText(el, "।"); } finally { selfEdit--; }
+    return true;
+  }
+
+  const MODIFIER_KEYS = new Set(["Shift", "Control", "Alt", "Meta", "CapsLock", "AltGraph"]);
+
+  function onKeyDown(e) {
+    if (e.isComposing || e.keyCode === 229) return; // an OS IME is composing
+    if (isDocsTextEventFrame()) return; // handled by the Google Docs adapter
+    if (MODIFIER_KEYS.has(e.key)) return;
+
+    const undoable = lastCommit;
+    lastCommit = null;
+
+    if (!active()) return;
+    const el = eventTarget(e);
+    if (!isEditable(el)) return;
+    ensureDictionary();
+
+    const key = e.key;
+    const mod = e.ctrlKey || e.metaKey || e.altKey;
+
+    if (key === "Backspace" && !mod && undoable && undoable.el === el && undoCommit(el, undoable)) {
+      e.preventDefault();
+      return;
+    }
+
+    if (panelOpenFor(el)) {
+      if (key === "ArrowDown") { e.preventDefault(); panelIndex = (panelIndex + 1) % panelItems.length; renderPanel(); return; }
+      if (key === "ArrowUp") { e.preventDefault(); panelIndex = (panelIndex - 1 + panelItems.length) % panelItems.length; renderPanel(); return; }
+      // Tab always takes the highlighted candidate. Enter does too once the
+      // selection has been moved; on the default candidate it converts the
+      // word and still reaches the page, so one Enter sends a chat message.
+      if (!mod && (key === "Tab" || (key === "Enter" && panelIndex > 0))) { e.preventDefault(); commitPanel(panelIndex); return; }
+      if (key === "Escape") { e.preventDefault(); hidePanel(); return; }
+      if (/^[1-9]$/.test(key) && mod) {
+        const idx = parseInt(key, 10) - 1;
+        if (idx < panelItems.length) { e.preventDefault(); commitPanel(idx); return; }
+      }
+    }
+
+    if (mod && key !== "Enter") return; // leave keyboard shortcuts alone
+
+    // Any key that ends a word converts it: space, Enter, Tab and punctuation.
+    const endsWord = key === "Enter" || key === "Tab" || (key.length === 1 && !E.isWordChar(key));
+    if (!endsWord) return;
+
+    // Space takes the highlighted candidate when the user has moved the selection.
+    const picked = key === " " && panelOpenFor(el) && panelIndex > 0 ? panelItems[panelIndex] : null;
+    const latin = panelLatin;
+    hidePanel();
+    let committed = false;
+    if (picked) {
+      remember(latin, picked);
+      committed = picked === latin ? false : commitWord(el, picked);
+    } else {
+      committed = commitWord(el);
+    }
+    if (key === "." && !mod && handleDot(el, committed)) e.preventDefault();
+  }
+
+  function refreshPanel(el) {
+    const info = getWordBeforeCaret(el);
+    if (!settings.candidateWindow || !info || !info.text || info.text.length > 40 || !E.hasLetter(info.text)) {
+      hidePanel();
+      return;
+    }
+    const items = E.suggest(info.text);
+    if (items.length === 0) { hidePanel(); return; }
+    showPanel(el, info.text, items);
+  }
+
+  function onInput(e) {
+    if (selfEdit) return;
+    if (isDocsTextEventFrame()) return;
+    if (!active()) { hidePanel(); return; }
+    if (e.isComposing) return;
+    const el = eventTarget(e);
+    if (!isEditable(el)) return;
+    ensureDictionary();
+    refreshPanel(el);
+  }
+
+  function onFocusIn(e) {
+    if (active() && isEditable(eventTarget(e))) ensureDictionary();
+  }
+
+  on(document, "keydown", onKeyDown, true);
+  on(document, "input", onInput, true);
+  on(document, "focusin", onFocusIn, true);
+  on(document, "focusout", () => hidePanel(), true);
+  on(window, "scroll", (e) => { if (e.target !== panelHost) hidePanel(); }, true);
+  on(window, "resize", () => hidePanel());
 
   // ============================================================
   // Google Docs support
   // Docs renders text on a <canvas>; keystrokes go to a hidden
-  // .docs-texteventtarget-iframe. We buffer Latin keys in that frame,
-  // then replace them with Bangla using synthetic Backspace + paste,
-  // and render the candidate panel in the top frame near the Kix caret.
+  // .docs-texteventtarget-iframe. We buffer Latin keys in that frame, insert
+  // only the finished Bangla word, and render the candidate panel in the top
+  // frame near the Kix caret.
   // ============================================================
   const IS_DOCS = /(^|\.)docs\.google\.com$/.test(location.hostname) ||
-    (() => { try { return window.top !== window && /docs\.google\.com/.test(document.referrer); } catch (_) { return false; } })();
+    (() => { try { return !IS_TOP && /docs\.google\.com/.test(document.referrer); } catch (_) { return false; } })();
 
   let docsPanelActive = false;
   let docsFrameWin = null;
 
-  function docsEventTargetFrame() {
-    return document.querySelector("iframe.docs-texteventtarget-iframe");
-  }
-
   function docsPostToFrame(payload) {
     try {
-      const win = docsFrameWin || docsEventTargetFrame()?.contentWindow;
-      win?.postMessage({ __seDocs: 1, ...payload }, "*");
+      const frame = document.querySelector("iframe.docs-texteventtarget-iframe");
+      const win = docsFrameWin || (frame && frame.contentWindow);
+      if (win) win.postMessage({ __seDocs: 1, ...payload }, "*");
     } catch (_) {}
   }
 
@@ -489,16 +607,17 @@
     return { left: r.left + 40, right: r.left + 40, top: r.top + 80, bottom: r.top + 80, width: 0, height: 0 };
   }
 
-  // ---- top frame: render the panel on behalf of the hidden iframe ----
   function isDocsTextEventFrame() {
+    if (!IS_DOCS) return false;
     try {
       const fe = window.frameElement;
       return !!fe && /docs-texteventtarget-iframe/.test(fe.className || "");
     } catch (_) { return false; }
   }
 
-  if (IS_DOCS && window.top === window) {
-    window.addEventListener("message", (ev) => {
+  // ---- top frame: render the panel on behalf of the hidden iframe ----
+  if (IS_DOCS && IS_TOP) {
+    on(window, "message", (ev) => {
       const d = ev.data;
       if (!d || d.__seDocs !== 1) return;
       docsFrameWin = ev.source;
@@ -506,37 +625,36 @@
         ensurePanel();
         docsPanelActive = true;
         panelTarget = null;
-        panelInfo = null;
-        panelItems = d.items || [];
+        panelLatin = d.raw || "";
+        panelItems = Array.isArray(d.items) ? d.items.map(String) : [];
         panelIndex = d.index || 0;
         renderPanel();
         placePanel(docsCaretRect());
-        requestAnimationFrame(() => panelListEl.classList.add("open"));
+        panelListEl.classList.add("open");
       } else if (d.kind === "index") {
         panelIndex = d.index || 0;
         renderPanel();
       } else if (d.kind === "hide") {
         hidePanel();
       } else if (d.kind === "stats") {
-        updateStats(d.text || "");
+        updateStats(String(d.text || ""));
       }
     });
   }
 
   // ---- hidden iframe: intercept typing ----
   if (IS_DOCS) {
-    // Strategy: swallow the Latin keystrokes entirely (Docs never sees them),
-    // keep them in our own buffer, and insert only the finished Bangla word.
-    // This avoids synthetic-Backspace deletion, which Docs handles unreliably.
+    // Swallow the Latin keystrokes entirely (Docs never sees them), keep them
+    // in our own buffer, and insert only the finished Bangla word. This avoids
+    // synthetic-Backspace deletion, which Docs handles unreliably.
     let buf = "";
     let docsIndex = 0;
-    const WORD_RE = /^[A-Za-z^:0-9]$/;
-
-    const target = () => document.activeElement || document.body;
+    let afterBangla = false; // the last thing inserted was a converted word
+    const toTop = (payload) => { try { window.top.postMessage({ __seDocs: 1, ...payload }, "*"); } catch (_) {} };
 
     function docsInsert(text) {
       if (!text) return;
-      const el = target();
+      const el = document.activeElement || document.body;
       let ok = false;
       try { ok = document.execCommand("insertText", false, text); } catch (_) {}
       if (!ok) {
@@ -547,52 +665,48 @@
         } catch (_) {}
       }
     }
-
-    function hideTop() {
-      try { window.top.postMessage({ __seDocs: 1, kind: "hide" }, "*"); } catch (_) {}
-    }
-
+    const hideTop = () => toTop({ kind: "hide" });
     function sendPanel() {
-      if (!buf || !/[A-Za-z]/.test(buf)) { hideTop(); return; }
-      try {
-        window.top.postMessage(
-          { __seDocs: 1, kind: "show", items: suggest(buf), index: docsIndex, raw: buf },
-          "*"
-        );
-      } catch (_) {}
+      if (!buf || !E.hasLetter(buf) || !settings.candidateWindow) { hideTop(); return; }
+      toTop({ kind: "show", items: E.suggest(buf), index: docsIndex, raw: buf });
     }
-
     function commit(text, tail) {
       docsInsert((text || "") + (tail || ""));
       buf = "";
       docsIndex = 0;
       hideTop();
-      if (text) { try { window.top.postMessage({ __seDocs: 1, kind: "stats", text }, "*"); } catch (_) {} }
+      if (text) toTop({ kind: "stats", text });
     }
 
-    window.addEventListener("message", (ev) => {
+    on(window, "message", (ev) => {
       const d = ev.data;
       if (!d || d.__seDocs !== 1 || d.kind !== "commit") return;
       if (!buf || !d.text) return;
-      commit(d.text, "");
+      commit(String(d.text), settings.autoSpace ? " " : "");
+      afterBangla = true;
     });
 
-    document.addEventListener("keydown", (e) => {
+    on(document, "keydown", (e) => {
       if (!isDocsTextEventFrame()) return;
-      if (!settings.enabled || settings.language !== "bn") { buf = ""; return; }
-      if (e.ctrlKey || e.metaKey || e.altKey) { buf = ""; hideTop(); return; }
+      if (e.isComposing || MODIFIER_KEYS.has(e.key)) return;
+      if (!active()) { buf = ""; return; }
+      ensureDictionary();
+      if (e.ctrlKey || e.metaKey || e.altKey) {
+        if (buf) commit(E.transliterate(buf), "");
+        return;
+      }
 
       if (buf) {
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-          const items = suggest(buf);
+          const items = E.suggest(buf);
           docsIndex = (docsIndex + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
           e.preventDefault();
-          try { window.top.postMessage({ __seDocs: 1, kind: "index", index: docsIndex }, "*"); } catch (_) {}
+          toTop({ kind: "index", index: docsIndex });
           return;
         }
         if (e.key === "Tab") {
           e.preventDefault();
-          commit(suggest(buf)[docsIndex] || transliterate(buf), "");
+          commit(E.suggest(buf)[docsIndex] || E.transliterate(buf), "");
           return;
         }
         if (e.key === "Escape") {
@@ -610,7 +724,7 @@
       }
 
       // Buffer printable Latin — Docs must not receive it.
-      if (e.key.length === 1 && WORD_RE.test(e.key)) {
+      if (e.key.length === 1 && E.isWordChar(e.key) && (buf || !/[0-9]/.test(e.key))) {
         e.preventDefault();
         buf += e.key;
         docsIndex = 0;
@@ -618,205 +732,125 @@
         return;
       }
 
-      const isSpace = e.key === " ";
-      const isEnter = e.key === "Enter";
-      const isPunct = e.key.length === 1 && /[.,!?;:'"()\-–—/]/.test(e.key);
-
-      if (isSpace || isPunct) {
-        e.preventDefault();
-        const tail = e.key === "." ? "।" : e.key;
-        commit(buf && /[A-Za-z]/.test(buf) ? transliterate(buf) : buf, tail);
-        return;
-      }
-      if (isEnter) {
-        if (buf && /[A-Za-z]/.test(buf)) {
-          e.preventDefault();
-          commit(transliterate(buf), "\n");
+      if (e.key.length === 1) {
+        if (!buf) {
+          // nothing pending: Docs types it, except a full stop closing a Bangla word
+          if (e.key === "." && afterBangla) { e.preventDefault(); docsInsert("।"); }
+          if (e.key !== " ") afterBangla = false;
+          hideTop();
           return;
         }
-        buf = "";
-        hideTop();
+        e.preventDefault();
+        const hasWord = E.hasLetter(buf);
+        const word = hasWord
+          ? (e.key === " " && docsIndex > 0 && E.suggest(buf)[docsIndex]) || E.transliterate(buf)
+          : buf;
+        commit(word, e.key === "." && hasWord ? "।" : e.key);
+        afterBangla = hasWord && e.key === " ";
         return;
       }
-
-      if (e.key.length > 1) {
-        buf = "";
-        docsIndex = 0;
-        hideTop();
+      afterBangla = false;
+      if (e.key === "Enter") {
+        if (buf && E.hasLetter(buf)) {
+          e.preventDefault();
+          commit(E.transliterate(buf), "\n");
+          return;
+        }
+        if (buf) commit(buf, "");
+        return;
       }
+      // navigation and other named keys: flush what was typed, then let Docs act
+      if (buf) commit(E.hasLetter(buf) ? E.transliterate(buf) : buf, "");
     }, true);
   }
 
-
   // ============================================================
-  // Stats
+  // Stats (batched, stored locally by the service worker)
   // ============================================================
   let statsQueue = { words: 0, chars: 0, bn: 0, en: 0 };
   let statsTimer = null;
   function updateStats(text) {
     statsQueue.words += 1;
     statsQueue.chars += [...text].length;
-    if (settings.language === "bn") statsQueue.bn += 1; else statsQueue.en += 1;
+    statsQueue.bn += 1;
     if (statsTimer) return;
     statsTimer = setTimeout(() => {
-      try { chrome.runtime.sendMessage({ type: "SE_UPDATE_STATS", ...statsQueue }); } catch (_) {}
+      try { chrome.runtime.sendMessage({ type: "SE_UPDATE_STATS", ...statsQueue }, () => void chrome.runtime.lastError); } catch (_) {}
       statsQueue = { words: 0, chars: 0, bn: 0, en: 0 };
       statsTimer = null;
-    }, 1500);
+    }, 3000);
   }
 
   // ============================================================
-  // Event handling
-  // ============================================================
-  document.addEventListener("keydown", (e) => {
-    if (isDocsTextEventFrame()) return; // handled by the Google Docs adapter
-    if (!settings.enabled || settings.language !== "bn") return;
-
-    const el = eventTarget(e);
-    if (!isEditable(el)) return;
-
-    // Panel navigation
-    if (panelItems.length && panelTarget === el) {
-      if (e.key === "ArrowDown") { e.preventDefault(); panelIndex = (panelIndex + 1) % panelItems.length; renderPanel(); return; }
-      if (e.key === "ArrowUp")   { e.preventDefault(); panelIndex = (panelIndex - 1 + panelItems.length) % panelItems.length; renderPanel(); return; }
-      if (e.key === "Enter" || e.key === "Tab") {
-        e.preventDefault();
-        commitPanel(panelIndex);
-        return;
-      }
-      if (e.key === "Escape") { e.preventDefault(); hidePanel(); return; }
-      if (/^[1-9]$/.test(e.key) && (e.ctrlKey || e.metaKey || e.altKey)) {
-        const idx = parseInt(e.key, 10) - 1;
-        if (idx < panelItems.length) { e.preventDefault(); commitPanel(idx); return; }
-      }
-    }
-
-    // Commit on space / punctuation
-    if (e.key === " " || e.key === "Enter" || /^[.,!?;:।]$/.test(e.key)) {
-      const info = getWordBeforeCaret(el);
-      if (info && info.text.length > 0 && /[A-Za-z]/.test(info.text)) {
-        const bn = transliterate(info.text);
-        if (bn && bn !== info.text) {
-          replaceWord(el, info, bn);
-          updateStats(bn);
-        }
-      }
-      // Map "." to Bangla dari "।"
-      if (e.key === ".") {
-        e.preventDefault();
-        insertAtCaret(el, "।");
-      }
-      hidePanel();
-    }
-  }, true);
-
-  // Resolve the innermost target, seeing through shadow roots (web-component
-  // based editors) and falling back to the deep active element.
-  function eventTarget(e) {
-    let t = null;
-    try { const p = e.composedPath && e.composedPath(); if (p && p.length) t = p[0]; } catch (_) {}
-    if (!t || t.nodeType !== 1) t = e.target;
-    if (!isEditable(t)) {
-      let a = document.activeElement;
-      let guard = 0;
-      while (a && a.shadowRoot && a.shadowRoot.activeElement && guard++ < 10) a = a.shadowRoot.activeElement;
-      if (a && isEditable(a)) t = a;
-    }
-    return t;
-  }
-
-  function insertAtCaret(el, str) {
-    if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") {
-      let ok = false;
-      try { ok = document.execCommand("insertText", false, str); } catch (_) {}
-      if (!ok) {
-        const val = el.value;
-        const pos = el.selectionStart ?? val.length;
-        el.value = val.slice(0, pos) + str + val.slice(el.selectionEnd ?? pos);
-        const c = pos + str.length;
-        el.setSelectionRange(c, c);
-        el.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: str }));
-      }
-      return;
-    }
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) return;
-    const range = sel.getRangeAt(0);
-    range.deleteContents();
-    const node = document.createTextNode(str);
-    range.insertNode(node);
-    const r = document.createRange();
-    r.setStart(node, node.length);
-    r.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(r);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  }
-
-  document.addEventListener("input", (e) => {
-    if (isDocsTextEventFrame()) return; // handled by the Google Docs adapter
-    if (!settings.enabled || settings.language !== "bn") return;
-
-    const el = eventTarget(e);
-    if (!isEditable(el)) return;
-    if (!settings.candidateWindow) return;
-    const info = getWordBeforeCaret(el);
-    if (!info || info.text.length < 1 || !/[A-Za-z]/.test(info.text)) { hidePanel(); return; }
-    const items = suggest(info.text);
-    if (items.length === 0) { hidePanel(); return; }
-    showPanel(el, info, items);
-  }, true);
-
-  document.addEventListener("focusout", () => hidePanel(), true);
-  window.addEventListener("scroll", () => hidePanel(), true);
-  window.addEventListener("resize", () => hidePanel());
-
-  // ============================================================
-  // Floating status indicator
+  // Floating status indicator (top frame only)
   // ============================================================
   let indicatorHost = null;
+  let indicatorPill = null;
+  let indicatorTimer = null;
+
   function ensureIndicator() {
     if (indicatorHost) return;
     indicatorHost = document.createElement("div");
-    indicatorHost.style.cssText = "position:fixed;right:16px;bottom:16px;z-index:2147483646;pointer-events:none;";
+    indicatorHost.style.cssText = "all:initial;position:fixed;right:16px;bottom:16px;z-index:2147483646;pointer-events:none;";
     const root = indicatorHost.attachShadow({ mode: "open" });
     root.innerHTML = `
       <style>
         .pill {
-          font: 600 12px/1 "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          font: 600 12px/1 "Noto Sans Bengali", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
           padding: 8px 12px; border-radius: 999px;
-          background: linear-gradient(135deg, #FF9F1C, #FFC857);
+          background: linear-gradient(135deg, #F28C0F, #F5A623);
           color: #fff; box-shadow: 0 8px 24px rgba(255,159,28,0.35);
           opacity: 0; transform: translateY(6px);
           transition: opacity 200ms ease, transform 200ms ease;
           letter-spacing: 0.02em;
         }
-        .pill.show { opacity: 0.95; transform: translateY(0); }
+        .pill.show { opacity: 0.97; transform: translateY(0); }
         .pill.en { background: linear-gradient(135deg, #444, #666); box-shadow: 0 6px 18px rgba(0,0,0,0.2); }
+        @media (prefers-reduced-motion: reduce) { .pill { transition: none; } }
       </style>
-      <div class="pill" id="pill"></div>
+      <div class="pill" role="status"></div>
     `;
-    indicatorHost.__pill = root.getElementById("pill");
+    indicatorPill = root.querySelector(".pill");
     document.documentElement.appendChild(indicatorHost);
   }
-  let indicatorTimer = null;
-  function updateIndicator() { flashIndicator(false); }
+
+  // `force` shows the pill even if the ambient indicator is switched off, so a
+  // keyboard-shortcut toggle always gives feedback.
   function flashIndicator(force) {
-    // `force` = show even if the user disabled the ambient floating indicator
-    // (used for Ctrl+Space toggles so the language switch is always visible).
-    if (!force && (!settings.floatingIndicator || !settings.enabled)) {
-      if (indicatorHost) indicatorHost.__pill.classList.remove("show");
+    if (!IS_TOP || document.hidden) return;
+    if (!force && !settings.floatingIndicator) {
+      if (indicatorPill) indicatorPill.classList.remove("show");
       return;
     }
     ensureIndicator();
-    const p = indicatorHost.__pill;
-    p.textContent = settings.language === "bn" ? "বাংলা" : "English";
-    p.classList.toggle("en", settings.language !== "bn");
-    p.classList.add("show");
+    const bangla = active();
+    indicatorPill.textContent = !settings.enabled ? "Banglish off" : siteOff ? "Off on this site" : bangla ? "বাংলা" : "English";
+    indicatorPill.classList.toggle("en", !bangla);
+    indicatorPill.classList.add("show");
     clearTimeout(indicatorTimer);
-    indicatorTimer = setTimeout(() => p.classList.remove("show"), 1400);
+    indicatorTimer = setTimeout(() => indicatorPill && indicatorPill.classList.remove("show"), 1400);
   }
 
-  // expose engine for tests
-  window.__SE_TRANSLIT = transliterate;
+  // ============================================================
+  // Teardown
+  // ============================================================
+  function teardown() {
+    ac.abort();
+    clearTimeout(statsTimer);
+    clearTimeout(indicatorTimer);
+    try { chrome.storage.onChanged.removeListener(onStorageChanged); } catch (_) {}
+    try { chrome.runtime.onMessage.removeListener(onMessage); } catch (_) {}
+    if (panelHost) panelHost.remove();
+    if (indicatorHost) indicatorHost.remove();
+    panelHost = panelListEl = indicatorHost = indicatorPill = null;
+    if (window.__SE_BANGLISH__ === instance) window.__SE_BANGLISH__ = null;
+  }
+  on(document, TEARDOWN_EVENT, teardown);
+
+  const instance = { alive, teardown };
+  window.__SE_BANGLISH__ = instance;
+  // engine hook for tests and debugging
+  window.__SE_TRANSLIT = E.transliterate;
+
+  if (isEditable(deepActiveElement())) ensureDictionary();
 })();

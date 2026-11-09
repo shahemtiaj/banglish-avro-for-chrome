@@ -40,3 +40,5 @@
 .footer-link { color: var(--text-muted); text-decoration: none; font-size: 12px; }
 .footer-link:hover { color: var(--primary); }
 .dot-sep { color: var(--text-muted); }
+.heart { color: #FF5A5F; }
+#site-host { word-break: break-all; }

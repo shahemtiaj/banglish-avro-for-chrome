@@ -71,3 +71,14 @@
   .main { padding: 20px; }
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
 }
+.list-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.list-empty { padding: 24px; text-align: center; color: var(--text-muted); }
+.site-row { grid-template-columns: 1fr auto; }
+.form-error { color: #DC2626; margin: 10px 4px 0; }
+.about-head { gap: 14px; }
+.about-logo { width: 52px; height: 52px; font-size: 26px; }
+.about-name { font-size: 16px; }
+.about-text { margin-top: 12px; }
+.about-credit { margin-top: 10px; }
+.about-links { margin-top: 14px; gap: 8px; }
+#dict-error + .card { margin-top: 16px; }

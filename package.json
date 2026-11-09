@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "build:extension": "rm -f public/se-banglish-avro.zip && cd extension && nix run nixpkgs#zip -- -r ../public/se-banglish-avro.zip ."
+    "build:extension": "node scripts/build-extension.mjs",
+    "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
