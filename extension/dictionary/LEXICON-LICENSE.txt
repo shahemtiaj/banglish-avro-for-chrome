@@ -1,0 +1,23 @@
+lexicon.txt — Bangla word list
+==============================
+
+lexicon.txt in this folder is derived from the dictionary of Avro Phonetic
+(avrodict.js, as distributed with ibus-avro: https://github.com/sarim/ibus-avro).
+
+  The Original Code is jsAvroPhonetic.
+  The Initial Developer of the Original Code is
+  Mehdi Hasan Khan <mhasan@omicronlab.com>.
+  Copyright (C) OmicronLab (http://www.omicronlab.com). All Rights Reserved.
+
+This Source Code Form is subject to the terms of the Mozilla Public License,
+v. 2.0. If a copy of the MPL was not distributed with this file, You can
+obtain one at https://mozilla.org/MPL/2.0/.
+
+Changes made for SE Banglish Avro: the word list was filtered (archaic verb
+forms and entries with non-letter characters removed), a small number of
+everyday words were added, and every word was grouped under a "sound key".
+The script that performs this conversion is scripts/build-lexicon.mjs in
+https://github.com/shahemtiaj/banglish-avro-for-chrome.
+
+The MPL 2.0 applies to lexicon.txt only. The rest of this extension is
+licensed under the MIT License.

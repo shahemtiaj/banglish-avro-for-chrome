@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 await import("../extension/lib/engine.js");
 const E = globalThis.SEBanglishEngine;
 const dict = JSON.parse(readFileSync(new URL("../extension/dictionary/core.json", import.meta.url), "utf8"));
+const lexicon = readFileSync(new URL("../extension/dictionary/lexicon.txt", import.meta.url), "utf8");
 
 const rules = (pairs, opts) => {
   for (const [latin, bangla] of Object.entries(pairs)) {
@@ -93,19 +94,77 @@ test("suggestions", () => {
   assert.equal(s[0], "বাংলা");
   assert.ok(s.includes("বাংলাদেশ"), "prefix completion");
   assert.equal(s[s.length - 1], "bangla", "Latin original is the last candidate");
-  assert.ok(s.length <= 8);
+  assert.ok(s.length <= 9);
   assert.equal(new Set(s).size, s.length, "no duplicates");
-  assert.ok(E.suggest("srishtishil").includes("সৃস্তিশিল"), "ri-kar variant for unknown words");
+  assert.ok(E.suggest("srishtipur").includes("সৃস্তিপুর"), "ri-kar variant for unknown words");
   assert.deepEqual(E.suggest("123"), []);
+});
+
+test("sound keys merge the spellings people mix up", () => {
+  const same = (a, b) => assert.equal(E.latinKey(a), E.latinKey(b), `${a} ~ ${b}`);
+  same("shundor", "sundor");
+  same("bhalo", "valo");
+  same("bidda", "bidya");
+  same("bishwo", "bisso");
+  same("achhe", "ache");
+  same("juddho", "judho");
+  same("songit", "shonggit");
+  assert.notEqual(E.latinKey("boshe"), E.latinKey("oboshe"), "a leading o is never dropped");
+  assert.equal(E.latinKey("abc123"), "", "not a plain word");
+  for (const [latin, bangla] of Object.entries({
+    sundor: "সুন্দর", bidya: "বিদ্যা", bishwo: "বিশ্ব", shikkha: "শিক্ষা", biggan: "বিজ্ঞান", songit: "সঙ্গীত",
+    surjo: "সূর্য", prithibi: "পৃথিবী", onek: "অনেক", dukkho: "দুঃখ", bangla: "বাংলা",
+  })) {
+    assert.equal(E.latinKey(latin), E.banglaKey(bangla), `${latin} ~ ${bangla}`);
+  }
+});
+
+test("word list: correct spelling for words outside the hand dictionary", () => {
+  E.setDictionary(dict);
+  E.setCustomDictionary({});
+  E.setLearned({});
+  E.setOptions({ autoCorrect: true });
+  E.setLexicon(lexicon);
+  const expect = {
+    surjasto: "সূর্যাস্ত", orthonoitik: "অর্থনৈতিক", protijogitay: "প্রতিযোগিতায়", prodhanmontri: "প্রধানমন্ত্রী",
+    shikkharthira: "শিক্ষার্থীরা", lokera: "লোকেরা", ucchash: "উচ্ছ্বাস", bidda: "বিদ্যা", bisso: "বিশ্ব",
+    proyojoniyo: "প্রয়োজনীয়", songbidhan: "সংবিধান", abritti: "আবৃত্তি", biddut: "বিদ্যুৎ",
+  };
+  for (const [latin, bangla] of Object.entries(expect)) assert.equal(E.transliterate(latin), bangla, latin);
+  // not a real word: the plain phonetic spelling stands
+  assert.equal(E.transliterate("shikkh"), "শিক্ষ");
+  assert.equal(E.transliterate("rakibul"), E.phonetic("rakibul"));
+  // suggestions include real words that start this way
+  assert.ok(E.suggest("prokri").includes("প্রকৃতি"));
+  assert.ok(E.suggest("shadhin").includes("স্বাধীনতা"));
+  // switched off together with auto correction
+  E.setOptions({ autoCorrect: false });
+  assert.equal(E.transliterate("surjasto"), E.phonetic("surjasto"));
+  E.setOptions({ autoCorrect: true });
+  E.setLexicon("");
+});
+
+test("word list file is sorted and consistent with the engine", () => {
+  const lines = lexicon.split("\n").filter(Boolean);
+  assert.ok(lines.length > 50000);
+  let prev = "";
+  for (let i = 0; i < lines.length; i += 97) {
+    const [key, words] = lines[i].split("\t");
+    assert.ok(key > prev, `sorted at line ${i}`);
+    prev = key;
+    for (const w of words.split(" ")) assert.equal(E.banglaKey(w), key, w);
+  }
 });
 
 test("stays fast", () => {
   E.setDictionary(dict);
+  E.setLexicon(lexicon);
   const words = ["ami", "bangladesh", "bishwabidyaloy", "shadhinota", "k", "pro", "muktijuddho"];
   const t0 = performance.now();
   for (let i = 0; i < 2000; i++) E.suggest(words[i % words.length]);
   const perCall = (performance.now() - t0) / 2000;
   assert.ok(perCall < 2, `suggest() took ${perCall.toFixed(3)} ms`);
+  E.setLexicon("");
 });
 
 test("dictionary is well-formed", () => {

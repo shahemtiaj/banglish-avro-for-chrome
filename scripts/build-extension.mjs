@@ -44,6 +44,16 @@ const referenced = [
   ...Object.values(manifest.icons),
 ];
 for (const file of referenced) statSync(join(srcDir, file));
+// The sound-matched word list is optional but must come with its licence.
+let lexiconWords = 0;
+try {
+  const lexicon = readFileSync(join(srcDir, "dictionary", "lexicon.txt"), "utf8");
+  statSync(join(srcDir, "dictionary", "LEXICON-LICENSE.txt"));
+  lexiconWords = lexicon.split("\n").reduce((n, line) => n + (line ? line.split("\t")[1].split(" ").length : 0), 0);
+} catch (err) {
+  if (err.code !== "ENOENT") throw err;
+  console.warn("note: no dictionary/lexicon.txt — run scripts/build-lexicon.mjs for sound-matched suggestions");
+}
 
 // Fixed timestamp → identical input always produces an identical zip.
 const DOS_TIME = 0;
@@ -105,6 +115,6 @@ writeFileSync(outFile, zip);
 copyFileSync(join(srcDir, "dictionary", "core.json"), join(root, "src", "lib", "bn-dictionary.json"));
 
 console.log(
-  `v${manifest.version}: ${files.length} files, ${Object.keys(dictionary).length} dictionary words → ` +
+  `v${manifest.version}: ${files.length} files, ${Object.keys(dictionary).length} dictionary spellings, ${lexiconWords} lexicon words → ` +
     `${relative(root, outFile)} (${(zip.length / 1024).toFixed(0)} KB)`,
 );

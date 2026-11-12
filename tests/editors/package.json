@@ -1,0 +1,33 @@
+{
+  "name": "se-banglish-editor-tests",
+  "private": true,
+  "type": "module",
+  "description": "Runs the extension against the rich-text editors popular sites are built on.",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node build.mjs && node run.mjs ../../extension"
+  },
+  "devDependencies": {
+    "@lexical/history": "^0.53.0",
+    "@lexical/plain-text": "^0.53.0",
+    "@lexical/rich-text": "^0.53.0",
+    "@tiptap/core": "^3.33.1",
+    "@tiptap/starter-kit": "^3.33.1",
+    "ace-builds": "^1.45.2",
+    "ckeditor5": "^49.1.0",
+    "codemirror": "^6.0.2",
+    "codemirror5": "npm:codemirror@^5.65.21",
+    "draft-js": "^0.11.7",
+    "esbuild": "^0.28.2",
+    "lexical": "^0.53.0",
+    "monaco-editor": "^0.57.0",
+    "playwright": "^1.63.0",
+    "quill": "^2.0.3",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "slate": "^0.147.4",
+    "slate-history": "^0.144.0",
+    "slate-react": "^0.147.6",
+    "tinymce": "^8.10.2"
+  }
+}

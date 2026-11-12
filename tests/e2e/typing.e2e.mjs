@@ -76,6 +76,11 @@ try {
     await type("ami tomake bhalobashi ");
     assert.equal(await value("text"), "আমি তোমাকে ভালোবাসি ");
   });
+  await check("word list reaches the page: words outside the dictionary are spelled right", async () => {
+    await clear("text");
+    await type("surjasto dekhte prodhanmontri asben ");
+    assert.equal(await value("text"), "সূর্যাস্ত দেখতে প্রধানমন্ত্রী আসবেন ");
+  });
   await check("candidate window opens with ranked choices, Latin last", async () => {
     await clear("text");
     await type("bangla");

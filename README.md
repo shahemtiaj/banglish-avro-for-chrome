@@ -14,10 +14,10 @@
 ## Features
 
 - **Avro-style phonetic engine** — Longest-match tokenizer with kar, reph, র/য/ব-ফলা, hasanta, chandrabindu, anuswar and visarga. Only real Bangla conjuncts are joined, so `rajshahi` gives রাজশাহি, never রাজ্শাহি. Well under 1 ms per keystroke.
-- **6,000-word spelling dictionary** — Common words come out with the correct banan (`prithibi` → পৃথিবী), including case endings (`prithibite` → পৃথিবীতে, `manushke` → মানুষকে).
-- **Candidate window at the caret** — Dictionary completions, phonetic alternatives (ঋ-kar, ো, unjoined) and the untouched English word, with arrow-key navigation. It remembers what you pick.
+- **Knows how words are really spelled** — A hand-checked dictionary of 6,300 everyday spellings and names, backed by a 140,000-word Bangla word list that is matched *by sound*: `shundor`, `sundor` and `sundar` all find সুন্দর; `surjasto` gives সূর্যাস্ত, `bidda` বিদ্যা, `prodhanmontri` প্রধানমন্ত্রী. Case endings work too (`prithibite` → পৃথিবীতে, `lokera` → লোকেরা).
+- **Candidate window at the caret** — Up to nine choices: other real words that sound the same, longer words that start this way, the letter-by-letter spelling, and the untouched English word. Arrow keys, `Tab`, or a click. It remembers what you pick.
 - **Backspace to undo** — Pressing Backspace right after a conversion reopens the word as you typed it.
-- **Works everywhere** — Gmail, X, Facebook, Messenger, Notion, Medium, ChatGPT, Claude, Gemini, Google Docs, and any editable field. E-mail, password, phone and OTP fields are left alone.
+- **Works with every kind of text box** — Tested in Chrome against the editors the big sites are built on: Lexical (Facebook, Messenger, WhatsApp Web), Draft.js (X), Slate (Discord), ProseMirror (ChatGPT, Claude), Quill (Gemini, LinkedIn, Slack), CKEditor, TinyMCE, CodeMirror, Ace and Monaco, plus React inputs, shadow DOM, iframes, modal dialogs, strict-CSP pages and Google Docs. E-mail, password, phone and OTP fields are left alone.
 - **Per-site switch** — Turn Bangla typing off for a single site from the toolbar popup.
 - **Custom dictionary** — Add names, brands, and slang once; they show up as top suggestions everywhere. Import and export as JSON.
 - **Private by design** — Everything runs locally. No servers, no analytics, no tracking, and web pages cannot detect that the extension is installed.
@@ -87,14 +87,18 @@ The extension is a Manifest V3 Chrome extension in plain JavaScript — no build
 
 ```
 extension/
-  lib/engine.js           phonetic engine — the single copy used by the content script,
-                          the options page, the landing-page demo and the tests
-  content/content.js      typing, candidate window, Google Docs adapter
-  background/             service worker: settings, dictionary delivery, statistics
-  dictionary/core.json    Banglish → Bangla spelling dictionary
-  popup/  options/        UI
-tests/                    engine + dictionary tests (Node), optional browser test
+  lib/engine.js             phonetic engine — the single copy used by the content script,
+                            the options page, the landing-page demo and the tests
+  content/content.js        typing, candidate window, buffered mode for Google Docs / code editors
+  background/               service worker: settings, dictionary delivery, statistics
+  dictionary/core.json      hand-checked Banglish → Bangla spellings
+  dictionary/lexicon.txt    140,000-word list grouped by sound key (generated, MPL 2.0)
+  popup/  options/          UI
+tests/engine.test.mjs       engine, dictionary and word-list tests (Node)
+tests/e2e/                  typing test in a real browser
+tests/editors/              the same against Lexical, Draft.js, Slate, ProseMirror, Quill, …
 scripts/build-extension.mjs
+scripts/build-lexicon.mjs
 ```
 
 ```bash
@@ -104,8 +108,15 @@ npm test
 # Pack extension/ into public/se-banglish-avro.zip (pure Node, any OS)
 npm run build:extension
 
-# Optional: real-browser typing test
+# Real-browser typing test
 npm i -D playwright && node tests/e2e/typing.e2e.mjs
+
+# Editor compatibility matrix (see tests/editors/README.md)
+cd tests/editors && npm install && npm test
+
+# Regenerate the word list after changing the sound-key rules in engine.js
+git clone --depth 1 https://github.com/sarim/ibus-avro /tmp/ibus-avro
+node scripts/build-lexicon.mjs /tmp/ibus-avro/avrodict.js
 
 # Landing page
 bun install && bun dev
@@ -124,3 +135,5 @@ Made with love by **[Shah Emtiaj](https://shahemtiaj.com)**.
 ## License
 
 [MIT](LICENSE) © **[Shah Emtiaj](https://shahemtiaj.com)**
+
+One file is under a different licence: `extension/dictionary/lexicon.txt` is derived from the dictionary of [Avro Phonetic](https://www.omicronlab.com/) (© OmicronLab, via [ibus-avro](https://github.com/sarim/ibus-avro)) and remains under the [Mozilla Public License 2.0](https://mozilla.org/MPL/2.0/). See `extension/dictionary/LEXICON-LICENSE.txt`. The extension works without that file — it then falls back to the hand-checked dictionary and the phonetic rules.

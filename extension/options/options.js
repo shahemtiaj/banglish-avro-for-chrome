@@ -307,8 +307,10 @@ async function loadEngineDictionary() {
   try {
     const res = await fetch(chrome.runtime.getURL("dictionary/core.json"));
     E.setDictionary(await res.json());
+    const lex = await fetch(chrome.runtime.getURL("dictionary/lexicon.txt"));
+    if (lex.ok) E.setLexicon(await lex.text());
   } catch (_) {
-    // the rule-based engine still works without it
+    // the rule-based engine still works without them
   }
 }
 

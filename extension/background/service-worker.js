@@ -116,14 +116,18 @@ async function toggleLanguage(tabId) {
   }
 }
 
-// The dictionary is served from here so it does not have to be a
-// web-accessible resource (which would let any site detect the extension).
+// The dictionaries are served from here so they do not have to be
+// web-accessible resources (which would let any site detect the extension).
+//   words   — hand-checked Banglish → Bangla spellings (core.json)
+//   lexicon — large word list matched by sound (lexicon.txt)
 let dictionaryPromise = null;
 function loadDictionary() {
   if (!dictionaryPromise) {
-    dictionaryPromise = fetch(chrome.runtime.getURL("dictionary/core.json"))
-      .then((r) => r.json())
-      .catch(() => { dictionaryPromise = null; return {}; });
+    const words = fetch(chrome.runtime.getURL("dictionary/core.json")).then((r) => r.json());
+    const lexicon = fetch(chrome.runtime.getURL("dictionary/lexicon.txt")).then((r) => (r.ok ? r.text() : "")).catch(() => "");
+    dictionaryPromise = Promise.all([words, lexicon])
+      .then(([w, l]) => ({ words: w, lexicon: l }))
+      .catch(() => { dictionaryPromise = null; return { words: {}, lexicon: "" }; });
   }
   return dictionaryPromise;
 }

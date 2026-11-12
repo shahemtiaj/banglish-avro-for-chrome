@@ -325,6 +325,7 @@
   // ------------------------------------------------------------------
   let dictionary = {};
   let dictKeys = [];
+  let dictValues = new Set();
   let customDict = {};
   let customKeys = [];
   let learned = {};
@@ -341,10 +342,278 @@
     return outObj;
   };
 
-  function setDictionary(obj) { dictionary = clean(obj); dictKeys = Object.keys(dictionary).sort(); }
+  function setDictionary(obj) {
+    dictionary = clean(obj);
+    dictKeys = Object.keys(dictionary).sort();
+    dictValues = new Set(Object.values(dictionary));
+  }
   function setCustomDictionary(obj) { customDict = clean(obj); customKeys = Object.keys(customDict).sort(); }
   function setLearned(obj) { learned = clean(obj); }
   function setOptions(o) { if (o && typeof o.autoCorrect === "boolean") options.autoCorrect = o.autoCorrect; }
+
+  // ------------------------------------------------------------------
+  // Word list ("lexicon") matched by sound
+  // ------------------------------------------------------------------
+  // People spell the same Bangla word many ways in Latin letters (shundor /
+  // sundor, bhalo / valo, biddaloy / bidyaloy). Instead of listing every
+  // spelling, both the typed text and every word in the list are reduced to a
+  // "sound key": letters people use interchangeably are merged, doubled
+  // letters collapse, and the inherent vowel, y and w are dropped. Words with
+  // the same key as what was typed are candidates, ranked by how closely their
+  // plain romanisation matches the typing.
+  const KEY_LATIN = [
+    ["chh", "C"], ["kkh", "K"], ["ksh", "K"], ["rri", "ri"],
+    ["ch", "C"], ["kh", "K"], ["gh", "G"], ["jh", "J"], ["th", "T"], ["dh", "D"], ["ph", "f"], ["bh", "v"],
+    ["sh", "s"], ["ss", "s"],
+    ["aa", "a"], ["ee", "i"], ["ii", "i"], ["oo", "u"], ["uu", "u"], ["oi", "i"], ["ou", "u"],
+    ["a", "a"], ["b", "b"], ["c", "C"], ["d", "d"], ["e", "e"], ["f", "f"], ["g", "g"], ["h", "h"], ["i", "i"],
+    ["j", "j"], ["k", "k"], ["l", "l"], ["m", "m"], ["n", "n"], ["o", "0"], ["p", "p"], ["q", "k"], ["r", "r"],
+    ["s", "s"], ["t", "t"], ["u", "u"], ["v", "v"], ["w", "0"], ["x", "ks"], ["y", "0"], ["z", "j"],
+  ];
+  const KEY_LATIN_INDEX = (() => {
+    const idx = {};
+    for (const rule of KEY_LATIN) (idx[rule[0][0]] = idx[rule[0][0]] || []).push(rule);
+    for (const k in idx) idx[k].sort((a, b) => b[0].length - a[0].length);
+    return idx;
+  })();
+  const KEY_VOWELS = "aeiu0";
+  // unaspirated + aspirated written together sound like the aspirated one
+  const KEY_ASPIRATE = { kK: "K", gG: "G", jJ: "J", tT: "T", dD: "D" };
+
+  // Append one consonant symbol that directly follows the previous one.
+  function joinSymbol(out, sym) {
+    const prev = out[out.length - 1];
+    if (prev === undefined || KEY_VOWELS.includes(prev)) { out.push(sym); return; }
+    if (prev === sym) return; // doubled letter
+    if (KEY_ASPIRATE[prev + sym]) { out[out.length - 1] = sym; return; }
+    if (prev === "n" && sym === "g") return; // ng
+    out.push(sym);
+  }
+
+  function latinKey(latin) {
+    const s = String(latin).toLowerCase();
+    const out = [];
+    let i = 0;
+    // A word-initial "o" (অ / ও) is always typed, unlike the inherent vowel.
+    if (s[0] === "o" && !/^o[iuo]/.test(s)) { out.push("o"); i = 1; }
+    while (i < s.length) {
+      const rules = KEY_LATIN_INDEX[s[i]];
+      let hit = null;
+      if (rules) for (const r of rules) { if (s.startsWith(r[0], i)) { hit = r; break; } }
+      if (!hit) {
+        if (s[i] === "^" || s[i] === ":" || s[i] === "`") { i++; continue; }
+        return ""; // digits or symbols: not a plain word
+      }
+      i += hit[0].length;
+      for (const sym of hit[1]) {
+        if (KEY_VOWELS.includes(sym)) out.push(sym); else joinSymbol(out, sym);
+      }
+    }
+    return out.join("").replace(/0/g, "");
+  }
+
+  const KEY_BANGLA = {
+    "ক": "k", "খ": "K", "গ": "g", "ঘ": "G", "ঙ": "n", "চ": "C", "ছ": "C", "জ": "j", "ঝ": "J", "ঞ": "n",
+    "ট": "t", "ঠ": "T", "ড": "d", "ঢ": "D", "ণ": "n", "ত": "t", "থ": "T", "দ": "d", "ধ": "D", "ন": "n",
+    "প": "p", "ফ": "f", "ব": "b", "ভ": "v", "ম": "m", "য": "j", "র": "r", "ল": "l",
+    "শ": "s", "ষ": "s", "স": "s", "হ": "h", "ড়": "r", "ঢ়": "r", "য়": "0", "ৎ": "t", "ং": "n",
+    "অ": "0", "আ": "a", "ই": "i", "ঈ": "i", "উ": "u", "ঊ": "u", "ঋ": "ri", "এ": "e", "ঐ": "i", "ও": "0", "ঔ": "u",
+    "া": "a", "ি": "i", "ী": "i", "ু": "u", "ূ": "u", "ৃ": "ri", "ে": "e", "ৈ": "i", "ো": "0", "ৌ": "u",
+    "ঃ": "", "ঁ": "", "‌": "", "‍": "",
+  };
+  // ব-ফলা is silent after these
+  const SILENT_BA_AFTER = "শষসতথদধজকনণটচছ";
+
+  // Sound key of a Bangla word, or "" if it is not a plain word.
+  function banglaKey(word) {
+    const w = String(word).replace(/\u09AF\u09BC/g, "\u09DF").replace(/\u09A1\u09BC/g, "\u09DC").replace(/\u09A2\u09BC/g, "\u09DD");
+    const out = [];
+    let joined = false; // previous character was a hasanta
+    let prevChar = "";
+    for (let i = 0; i < w.length; i++) {
+      const ch = w[i];
+      if (ch === HASANTA) { joined = true; continue; }
+      const conj = joined;
+      joined = false;
+      if (ch === "ক" && w[i + 1] === HASANTA && w[i + 2] === "ষ") {
+        if (conj) joinSymbol(out, "K"); else out.push("K");
+        i += 2; prevChar = "ষ";
+        continue;
+      }
+      if (ch === "জ" && w[i + 1] === HASANTA && w[i + 2] === "ঞ") {
+        if (conj) joinSymbol(out, "g"); else out.push("g");
+        i += 2; prevChar = "ঞ";
+        continue;
+      }
+      if (i === 0 && (ch === "অ" || ch === "ও")) { out.push("o"); prevChar = ch; continue; }
+      const sym = KEY_BANGLA[ch];
+      if (sym === undefined) return "";
+      if (conj) {
+        if (ch === "য" && prevChar !== "র") { prevChar = ch; continue; } // য-ফলা (র্য is reph + য)
+        if (ch === "ব" && SILENT_BA_AFTER.includes(prevChar)) { prevChar = ch; continue; }
+        joinSymbol(out, sym);
+      } else if (sym === "g" && (prevChar === "ং" || prevChar === "ঙ")) {
+        // ংগ / ঙগ sound like ঙ্গ
+      } else {
+        for (const c of sym) out.push(c);
+      }
+      prevChar = ch;
+    }
+    return out.join("").replace(/0/g, "");
+  }
+
+  // Plain romanisation used only to rank candidates that share a sound key.
+  // ক্ষ and জ্ঞ are single units (X, Q) so "shikkh" is never read as শিখ.
+  const ROMAN = {
+    "ক": "k", "খ": "kh", "গ": "g", "ঘ": "gh", "ঙ": "ng", "চ": "ch", "ছ": "ch", "জ": "j", "ঝ": "jh", "ঞ": "n",
+    "ট": "t", "ঠ": "th", "ড": "d", "ঢ": "dh", "ণ": "n", "ত": "t", "থ": "th", "দ": "d", "ধ": "dh", "ন": "n",
+    "প": "p", "ফ": "f", "ব": "b", "ভ": "v", "ম": "m", "য": "j", "র": "r", "ল": "l",
+    "শ": "s", "ষ": "s", "স": "s", "হ": "h", "ড়": "r", "ঢ়": "r", "য়": "y", "ৎ": "t", "ং": "ng",
+    "অ": "o", "আ": "a", "ই": "i", "ঈ": "i", "উ": "u", "ঊ": "u", "ঋ": "ri", "এ": "e", "ঐ": "oi", "ও": "o", "ঔ": "ou",
+    "া": "a", "ি": "i", "ী": "i", "ু": "u", "ূ": "u", "ৃ": "ri", "ে": "e", "ৈ": "oi", "ো": "o", "ৌ": "ou",
+    "ঃ": "", "ঁ": "",
+  };
+  const IS_CONSONANT = /[\u0995-\u09B9\u09DC-\u09DF]/;
+  const SOUNDS_INHERENT = /[\u0985-\u0994\u0995-\u09B9\u09DC-\u09DF]/; // before a consonant or a full vowel
+  function romanize(word) {
+    let out = "";
+    let seenConsonant = false;
+    for (let i = 0; i < word.length; i++) {
+      const ch = word[i];
+      if (ch === "ক" && word[i + 1] === HASANTA && word[i + 2] === "ষ") { out += "X"; i += 2; seenConsonant = true; continue; }
+      if (ch === "জ" && word[i + 1] === HASANTA && word[i + 2] === "ঞ") { out += "Q"; i += 2; seenConsonant = true; continue; }
+      if (ch === HASANTA) {
+        const next = word[i + 1], before = word[i - 1];
+        // য-ফলা and a silent ব-ফলা are heard as a doubled consonant, except on
+        // the first consonant of a word (ব্যবহার, স্বাধীন) where they are not heard.
+        if ((next === "য" && before !== "র") || (next === "ব" && SILENT_BA_AFTER.includes(before))) {
+          if (out && !/^[^\u0995-\u09B9\u09DC-\u09DF]*[\u0995-\u09B9\u09DC-\u09DF]$/.test(word.slice(0, i))) out += out[out.length - 1];
+          i++;
+        }
+        continue;
+      }
+      if (ch === "\u09DF" && i === word.length - 1) { out += "Y"; continue; } // a final য় is always typed
+      out += ROMAN[ch] || "";
+      // an inherent vowel is usually sounded between two unjoined consonants
+      if (IS_CONSONANT.test(ch) && SOUNDS_INHERENT.test(word[i + 1] || "")) out += "o";
+    }
+    return out;
+  }
+  function plainLatin(latin) {
+    return String(latin).toLowerCase().replace(/[^a-z]/g, "")
+      .replace(/chh/g, "ch").replace(/c(?!h)/g, "ch").replace(/ph/g, "f").replace(/bh/g, "v").replace(/z/g, "j")
+      .replace(/aa/g, "a").replace(/ee|ii/g, "i").replace(/oo|uu/g, "u").replace(/ksh|kkh/g, "X").replace(/gy|gg/g, "Q")
+      .replace(/q/g, "k").replace(/x/g, "ks").replace(/sh/g, "s")
+      .replace(/yo?$/, "Y")
+      // consonant + y / w: nothing on a word's first consonant, a doubling later
+      .replace(/^([^aeiouyw]+)[yw](?=[aeiou])/, "$1")
+      .replace(/([^aeiouywY])[yw](?=[aeiou]|$)/g, "$1$1");
+  }
+  // Edit distance where the letters people leave out or add freely are cheap:
+  // the inherent vowel, h, y / w, and doubling a letter.
+  const CHEAP = { o: 0.2, h: 0.5, y: 0.4, w: 0.4 };
+  const REPEAT = 0.3;
+  const gapCost = (s, i) => {
+    const c = s[i];
+    if (i > 0 && c === s[i - 1]) return REPEAT;
+    if (c === "o" && (s[i + 1] === "i" || s[i + 1] === "u")) return 1; // oi / ou are real vowels
+    return CHEAP[c] || 1;
+  };
+  function soundDistance(a, b) {
+    const n = a.length, m = b.length;
+    let prev = new Array(m + 1);
+    let cur = new Array(m + 1);
+    prev[0] = 0;
+    for (let j = 1; j <= m; j++) prev[j] = prev[j - 1] + gapCost(b, j - 1);
+    for (let i = 1; i <= n; i++) {
+      const ca = a[i - 1];
+      const costA = gapCost(a, i - 1);
+      cur[0] = prev[0] + costA;
+      for (let j = 1; j <= m; j++) {
+        const sub = prev[j - 1] + (ca === b[j - 1] ? 0 : 1);
+        const del = prev[j] + costA;
+        const ins = cur[j - 1] + gapCost(b, j - 1);
+        cur[j] = sub < del ? (sub < ins ? sub : ins) : (del < ins ? del : ins);
+      }
+      const t = prev; prev = cur; cur = t;
+    }
+    return prev[m];
+  }
+
+  // The lexicon is one big string of lines "key<TAB>word word …", sorted by
+  // key, with an index of line starts. This keeps memory small (no per-word
+  // objects) and lookups are a binary search.
+  let lexText = "";
+  let lexStarts = null;
+  function setLexicon(text) {
+    lexText = typeof text === "string" ? text : "";
+    lexStarts = null;
+  }
+  function lexIndex() {
+    if (lexStarts) return lexStarts;
+    const starts = [];
+    if (lexText) {
+      starts.push(0);
+      for (let i = lexText.indexOf("\n"); i !== -1 && i + 1 < lexText.length; i = lexText.indexOf("\n", i + 1)) starts.push(i + 1);
+    }
+    lexStarts = new Int32Array(starts);
+    return lexStarts;
+  }
+  const lexKeyAt = (starts, n) => lexText.slice(starts[n], lexText.indexOf("\t", starts[n]));
+  function lexWordsAt(starts, n) {
+    const from = lexText.indexOf("\t", starts[n]) + 1;
+    let to = n + 1 < starts.length ? starts[n + 1] - 1 : lexText.length;
+    if (lexText[to - 1] === "\n") to--;
+    return lexText.slice(from, to).split(" ");
+  }
+  function lexLowerBound(starts, key) {
+    let lo = 0, hi = starts.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (lexKeyAt(starts, mid) < key) lo = mid + 1; else hi = mid;
+    }
+    return lo;
+  }
+
+  // Words that sound like `latin`, best first: [{ word, score }].
+  function soundMatches(latin) {
+    if (!lexText) return [];
+    const key = latinKey(latin);
+    if (!key) return [];
+    const starts = lexIndex();
+    const at = lexLowerBound(starts, key);
+    if (at >= starts.length || lexKeyAt(starts, at) !== key) return [];
+    const typed = plainLatin(latin);
+    const exact = phonetic(latin);
+    // `distance` is how far the typing is from the word; the small bonuses only
+    // settle near-ties and can never outweigh a real difference.
+    const scored = lexWordsAt(starts, at).map((word) => {
+      const distance = soundDistance(typed, romanize(word));
+      let score = distance;
+      if (word === exact) score -= 0.05; // typed precisely, Avro-style
+      if (dictValues.has(word)) score -= 0.15; // an everyday word
+      return { word, score, distance };
+    });
+    scored.sort((a, b) => a.score - b.score || a.word.length - b.word.length);
+    return scored;
+  }
+
+  // Longer words that start the way `latin` sounds.
+  function soundCompletions(latin, limit) {
+    if (!lexText) return [];
+    const key = latinKey(latin);
+    if (key.length < 2) return [];
+    const starts = lexIndex();
+    const found = [];
+    for (let n = lexLowerBound(starts, key), seen = 0; n < starts.length && seen < 250; n++, seen++) {
+      const k = lexKeyAt(starts, n);
+      if (!k.startsWith(key)) break;
+      if (k.length === key.length) continue;
+      for (const word of lexWordsAt(starts, n)) found.push({ word, extra: k.length - key.length, common: dictValues.has(word) ? 0 : 1 });
+    }
+    found.sort((a, b) => a.common - b.common || a.extra - b.extra || a.word.length - b.word.length);
+    return found.slice(0, limit).map((f) => f.word);
+  }
 
   // Common case endings. `after` says what the Bangla stem must end with.
   const SUFFIXES = [
@@ -356,15 +625,16 @@
     { s: "ra", bn: "রা", after: "any" }, { s: "r", bn: "র", after: "vowel" },
     { s: "y", bn: "য়", after: "vowel" }, { s: "e", bn: "ে", after: "cons" },
   ];
-  const ENDS_VOWEL = /[\u0985-\u0994\u09BE-\u09CC]$/;
-  const ENDS_CONS = /[\u0995-\u09B9\u09DC-\u09DF]$/;
+  const ENDS_VOWEL = /[অ-ঔা-ৌ]$/;
+  const ENDS_CONS = /[ক-হড়-য়]$/;
 
-  function stemLookup(key) {
+  // stemOf(stem) returns the Bangla for a Latin stem, or a falsy value.
+  function withSuffix(key, stemOf, minStem) {
     for (const suf of SUFFIXES) {
       if (!key.endsWith(suf.s)) continue;
       const stem = key.slice(0, -suf.s.length);
-      if (stem.length < 4) continue;
-      const bn = customDict[stem] || dictionary[stem];
+      if (stem.length < (minStem || 4)) continue;
+      const bn = stemOf(stem);
       if (!bn || bn.includes(" ")) continue;
       if (suf.after === "vowel" && !ENDS_VOWEL.test(bn)) continue;
       if (suf.after === "cons" && !ENDS_CONS.test(bn)) continue;
@@ -373,15 +643,30 @@
     return null;
   }
 
-  // Returns { text, source } where source is custom | learned | dict | stem | rule.
+  // A sound match becomes the default only if it differs from the typing by
+  // less than one real letter (dropped vowels, doubling, y / w).
+  const SOUND_LIMIT = 0.9;
+
+  // Returns { text, source }: custom | learned | dict | stem | sound | rule.
   function resolve(latin) {
     const key = latin.toLowerCase();
     if (customDict[key]) return { text: customDict[key], source: "custom" };
     if (learned[key]) return { text: learned[key], source: "learned" };
     if (options.autoCorrect) {
       if (dictionary[key]) return { text: dictionary[key], source: "dict" };
-      const stemmed = stemLookup(key);
+      const stemmed = withSuffix(key, (stem) => customDict[stem] || dictionary[stem]);
       if (stemmed) return { text: stemmed, source: "stem" };
+      // Very short typing matches too many words by sound to guess safely.
+      if (key.length >= 3) {
+        const matches = soundMatches(latin);
+        if (matches.length && matches[0].distance <= SOUND_LIMIT) return { text: matches[0].word, source: "sound" };
+        // an unknown word may still be a known one with an ending: lokera, bondhur
+        const built = withSuffix(key, (stem) => {
+          const m = soundMatches(stem);
+          return m.length && m[0].distance <= 0.5 ? m[0].word : null;
+        }, 3);
+        if (built) return { text: built, source: "stem" };
+      }
     }
     return { text: phonetic(latin), source: "rule" };
   }
@@ -410,8 +695,14 @@
     return hits.slice(0, limit);
   }
 
+  // Candidates for the suggestion window, best first:
+  //   1. the conversion Space would produce
+  //   2. other real words that sound like what was typed
+  //   3. the letter-by-letter spelling and its variants (ঋ-kar, ো, unjoined)
+  //   4. longer words that start this way
+  //   5. the typing itself, so an English word can be kept
   function suggest(latin, max) {
-    max = max || 8;
+    max = max || 9;
     if (!latin || !HAS_LETTER_RE.test(latin)) return [];
     const key = latin.toLowerCase();
     const out = [];
@@ -422,18 +713,24 @@
     if (customDict[key]) add(customDict[key]);
     if (dictionary[key]) add(dictionary[key]);
 
-    const variants = () => {
-      add(phonetic(latin));
-      add(phonetic(latin, { riKar: true }));
-      add(phonetic(latin, { finalO: true }));
-      add(phonetic(latin, { loose: true }));
-    };
-    const completions = () => {
-      for (const k of prefixHits(customKeys, key, max)) add(customDict[k]);
-      for (const k of prefixHits(dictKeys, key, max)) add(dictionary[k]);
-    };
-    if (primary.source === "rule") { variants(); completions(); }
-    else { completions(); variants(); }
+    const sounds = soundMatches(latin);
+    for (let i = 0; i < sounds.length && i < 4; i++) { if (sounds[i].distance <= 0.5) add(sounds[i].word); }
+    add(phonetic(latin));
+
+    const room = Math.max(2, max - 1 - out.length - 1);
+    const completions = [];
+    const push = (s) => { if (s && !out.includes(s) && !completions.includes(s)) completions.push(s); };
+    for (const k of prefixHits(customKeys, key, room)) push(customDict[k]);
+    for (const k of prefixHits(dictKeys, key, room)) push(dictionary[k]);
+    for (const w of soundCompletions(latin, room)) push(w);
+    const variants = [phonetic(latin, { riKar: true }), phonetic(latin, { finalO: true }), phonetic(latin, { loose: true })]
+      .filter((v) => !out.includes(v));
+
+    // Keep one slot for a spelling variant when the word is not a known one.
+    const keepVariant = primary.source === "rule" && variants.length ? 1 : 0;
+    for (const c of completions) { if (out.length >= max - 1 - keepVariant) break; add(c); }
+    for (const v of variants) { if (out.length >= max - 1) break; add(v); }
+    for (const c of completions) { if (out.length >= max - 1) break; add(c); }
 
     // The untouched Latin word is always the last choice, so an English word
     // can be kept without leaving Bangla mode.
@@ -449,7 +746,10 @@
     setDictionary,
     setCustomDictionary,
     setLearned,
+    setLexicon,
     setOptions,
+    latinKey,
+    banglaKey,
     isWordChar: (ch) => WORD_CHAR_RE.test(ch),
     hasLetter: (s) => HAS_LETTER_RE.test(s),
     WORD_CHARS,

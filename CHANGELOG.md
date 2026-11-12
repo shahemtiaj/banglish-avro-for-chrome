@@ -1,5 +1,31 @@
 # Changelog
 
+## 3.3.0
+
+### Works on more sites
+Tested against the editor frameworks popular sites are built on (`tests/editors`). Fixed:
+- **Slate (Discord) and CKEditor 5**: nothing was converted, and Slate text could be scrambled. These editors ignore `document.execCommand`; conversions are now offered as a `beforeinput` event first, which they accept.
+- **Lexical (Facebook, Messenger, WhatsApp Web) and Draft.js (X)**: picking a suggestion with Enter also inserted a line break, Backspace-undo ate an extra letter, and the dari after a word was lost. Keys the extension handles no longer reach the editor as well, and a word and its dari are written in one edit.
+- **Rich-text iframes built with `document.open()`** (classic forum / CMS editors): typing did nothing, because that call removes the extension's listeners. They are re-attached.
+- **Shadow DOM**: contenteditable fields inside web components, and fields inside *closed* shadow roots, now convert.
+- **Modal dialogs and full-screen elements** no longer cover the suggestion window (it is shown in the browser's top layer).
+- **CodeMirror 5, Ace and Monaco** (hidden-textarea code editors): typed words used to vanish. They now use the same buffered typing as Google Docs. Terminals are left alone.
+- Editors that cancel the browser's own text insertion never fired `input`, so the suggestion window did not open; it now also follows the caret.
+- The suggestion window and language pill are built without `innerHTML` / inline `<style>`, so strict Trusted-Types pages cannot block them.
+
+### Better spelling and more suggestions
+- A 140,000-word Bangla word list is matched **by sound**. Both the typing and every word are reduced to a sound key (s / sh, bh / v, j / z, doubled letters, dropped inherent vowels, y / w), so the usual spelling variations all find the real word: `surjasto` → সূর্যাস্ত, `bidda` / `bidya` → বিদ্যা, `bisso` / `bishwo` → বিশ্ব, `orthonoitik` → অর্থনৈতিক.
+- Unknown words with a common ending are built from the known stem: `shikkharthira` → শিক্ষার্থীরা, `lokera` → লোকেরা.
+- The suggestion window shows up to nine choices: same-sounding words, longer words that start this way, spelling variants, and the Latin original.
+- 230 common names and everyday verb forms added to the hand-checked dictionary (রহিম, নুসরাত, আক্তার, ব্যবস্থা, বসে, খেলছে …).
+- A full stop becomes a dari only after Bangla text.
+- "Auto correction" off disables the word list as well as the dictionary.
+
+### Project
+- `tests/editors`: an automated matrix of 29 editor setups, 370 checks.
+- `scripts/build-lexicon.mjs` generates the word list. It is derived from the Avro Phonetic dictionary (© OmicronLab) and stays under the MPL 2.0; everything else remains MIT.
+- The packaged extension grows from about 90 KB to about 1 MB because of the word list.
+
 ## 3.2.0
 
 ### Typing
