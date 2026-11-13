@@ -1,3 +1,6 @@
+// Options page controller. The phonetic engine comes from ../lib/engine.js.
+const E = globalThis.SEBanglishEngine;
+
 const DEFAULTS = {
   enabled: true,
   language: "bn",
@@ -6,28 +9,134 @@ const DEFAULTS = {
   autoSpace: false,
   rememberLastLanguage: true,
   floatingIndicator: true,
+  banglaDigits: false,
   theme: "system",
   layout: "avro",
-  stats: { wordsTyped: 0, charsTyped: 0, bnWords: 0, enWords: 0 },
   customDictionary: {},
+  disabledSites: [],
 };
+const DEFAULT_STATS = { wordsTyped: 0, charsTyped: 0, bnWords: 0, enWords: 0 };
+const BOOLEAN_KEYS = ["enabled", "candidateWindow", "autoCorrect", "autoSpace", "rememberLastLanguage", "floatingIndicator", "banglaDigits"];
+// chrome.storage.sync allows 8 KB per item; leave headroom for the key itself.
+const DICT_BYTE_LIMIT = 7800;
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
+const byteSize = (obj) => new TextEncoder().encode(JSON.stringify(obj)).length;
 
 function applyTheme(theme) {
-  if (theme === "system") document.documentElement.removeAttribute("data-theme");
-  else document.documentElement.dataset.theme = theme;
+  if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+  else document.documentElement.removeAttribute("data-theme");
 }
 
-async function loadState() {
-  return chrome.storage.sync.get(DEFAULTS);
+const loadState = () => chrome.storage.sync.get(DEFAULTS);
+
+// Accept only well-formed Banglish → Bangla pairs.
+function sanitizeDictionary(input) {
+  const out = {};
+  if (!input || typeof input !== "object" || Array.isArray(input)) return out;
+  for (const [k, v] of Object.entries(input)) {
+    if (typeof v !== "string") continue;
+    const key = String(k).trim().toLowerCase();
+    const val = v.trim();
+    if (/^[a-z][a-z0-9^:`]{0,39}$/.test(key) && val && val.length <= 80) out[key] = val;
+  }
+  return out;
+}
+
+function sanitizeSites(input) {
+  if (!Array.isArray(input)) return [];
+  return [...new Set(input.filter((h) => typeof h === "string" && /^[a-z0-9.-]{1,253}$/i.test(h)))].sort();
+}
+
+// Keep only known settings with valid values from an imported backup.
+function sanitizeSettings(data) {
+  const out = {};
+  if (!data || typeof data !== "object") return out;
+  for (const k of BOOLEAN_KEYS) if (typeof data[k] === "boolean") out[k] = data[k];
+  if (data.language === "bn" || data.language === "en") out.language = data.language;
+  if (["light", "dark", "system"].includes(data.theme)) out.theme = data.theme;
+  if ("customDictionary" in data) out.customDictionary = sanitizeDictionary(data.customDictionary);
+  if ("disabledSites" in data) out.disabledSites = sanitizeSites(data.disabledSites);
+  return out;
+}
+
+function emptyRow(text) {
+  const div = document.createElement("div");
+  div.className = "list-empty";
+  div.textContent = text;
+  return div;
+}
+
+function paintDict(dict) {
+  const list = $("#dict-list");
+  list.textContent = "";
+  const entries = Object.entries(dict).sort((a, b) => a[0].localeCompare(b[0]));
+  if (entries.length === 0) {
+    list.appendChild(emptyRow("No custom words yet. Add one above."));
+    return;
+  }
+  for (const [k, v] of entries) {
+    const row = document.createElement("div");
+    row.className = "dict-row";
+    const key = document.createElement("span");
+    key.textContent = k;
+    const val = document.createElement("span");
+    val.className = "bn";
+    val.textContent = v;
+    const del = document.createElement("button");
+    del.className = "btn danger";
+    del.textContent = "Remove";
+    del.dataset.del = k;
+    del.setAttribute("aria-label", `Remove ${k}`);
+    row.append(key, val, del);
+    list.appendChild(row);
+  }
+}
+
+function paintSites(sites) {
+  const list = $("#site-list");
+  list.textContent = "";
+  if (sites.length === 0) {
+    list.appendChild(emptyRow("Typing is on for every site."));
+    return;
+  }
+  for (const host of sites) {
+    const row = document.createElement("div");
+    row.className = "dict-row site-row";
+    const name = document.createElement("span");
+    name.textContent = host;
+    const del = document.createElement("button");
+    del.className = "btn";
+    del.textContent = "Turn back on";
+    del.dataset.site = host;
+    row.append(name, del);
+    list.appendChild(row);
+  }
+}
+
+async function paintLocal() {
+  const { stats, learned } = await chrome.storage.local.get({ stats: DEFAULT_STATS, learned: {} });
+  const s = { ...DEFAULT_STATS, ...stats };
+  $("#stat-words").textContent = s.wordsTyped.toLocaleString();
+  $("#stat-chars").textContent = s.charsTyped.toLocaleString();
+  $("#stat-bn").textContent = s.bnWords.toLocaleString();
+  $("#stat-en").textContent = s.enWords.toLocaleString();
+  $("#stat-mostused").textContent =
+    s.bnWords === 0 && s.enWords === 0 ? "—" : s.bnWords >= s.enWords ? "বাংলা (Bangla)" : "English";
+
+  const count = Object.keys(learned || {}).length;
+  $("#learned-hint").textContent =
+    count === 0
+      ? "Words you pick from the suggestion window are remembered on this device"
+      : `${count.toLocaleString()} remembered ${count === 1 ? "choice" : "choices"} on this device`;
+  $("#learned-clear").disabled = count === 0;
+  E.setLearned(learned || {});
 }
 
 function paint(state) {
   $$("input[data-setting]").forEach((el) => {
-    const k = el.dataset.setting;
-    if (el.type === "checkbox") el.checked = !!state[k];
+    if (el.type === "checkbox") el.checked = !!state[el.dataset.setting];
   });
   $$("select[data-setting]").forEach((el) => { el.value = state[el.dataset.setting]; });
   $$("[data-setting-group]").forEach((group) => {
@@ -37,40 +146,37 @@ function paint(state) {
     });
   });
   applyTheme(state.theme);
-
-  // stats
-  $("#stat-words").textContent = state.stats.wordsTyped.toLocaleString();
-  $("#stat-chars").textContent = state.stats.charsTyped.toLocaleString();
-  $("#stat-bn").textContent = state.stats.bnWords.toLocaleString();
-  $("#stat-en").textContent = state.stats.enWords.toLocaleString();
-  const most = state.stats.bnWords === 0 && state.stats.enWords === 0
-    ? "—"
-    : state.stats.bnWords >= state.stats.enWords ? "বাংলা (Bangla)" : "English";
-  $("#stat-mostused").textContent = most;
-
-  paintDict(state.customDictionary || {});
-}
-
-function paintDict(dict) {
-  const list = $("#dict-list");
-  const entries = Object.entries(dict);
-  if (entries.length === 0) {
-    list.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-muted)">No custom words yet. Add one above.</div>`;
-    return;
-  }
-  list.innerHTML = "";
-  entries.sort((a, b) => a[0].localeCompare(b[0]));
-  for (const [k, v] of entries) {
-    const row = document.createElement("div");
-    row.className = "dict-row";
-    row.innerHTML = `<span>${k}</span><span class="bn">${v}</span><button class="btn danger" data-del="${k}">Remove</button>`;
-    list.appendChild(row);
-  }
+  const dict = sanitizeDictionary(state.customDictionary);
+  paintDict(dict);
+  paintSites(sanitizeSites(state.disabledSites));
+  E.setCustomDictionary(dict);
+  E.setOptions({ autoCorrect: state.autoCorrect !== false });
 }
 
 async function update(patch) {
   await chrome.storage.sync.set(patch);
   paint(await loadState());
+}
+
+function showDictError(message) {
+  const el = $("#dict-error");
+  el.textContent = message || "";
+  el.hidden = !message;
+}
+
+async function saveDictionary(dict) {
+  if (byteSize(dict) > DICT_BYTE_LIMIT) {
+    showDictError("Your custom dictionary is full — Chrome Sync allows about 8 KB. Remove a few words to add more.");
+    return false;
+  }
+  try {
+    await update({ customDictionary: dict });
+    showDictError("");
+    return true;
+  } catch (err) {
+    showDictError("Could not save: " + (err?.message || "storage error"));
+    return false;
+  }
 }
 
 function bindNav() {
@@ -98,22 +204,44 @@ function bindControls() {
     });
   });
 
-  // Dictionary
-  $("#dict-add").addEventListener("click", async () => {
+  // Custom dictionary
+  const addWord = async () => {
     const k = $("#dict-key").value.trim().toLowerCase();
     const v = $("#dict-val").value.trim();
     if (!k || !v) return;
-    const { customDictionary } = await loadState();
-    customDictionary[k] = v;
-    await update({ customDictionary });
-    $("#dict-key").value = ""; $("#dict-val").value = "";
-  });
+    const entry = sanitizeDictionary({ [k]: v });
+    if (!(k in entry)) {
+      showDictError("The Banglish side must be a single word made of English letters, for example: rakib");
+      return;
+    }
+    const dict = sanitizeDictionary((await loadState()).customDictionary);
+    dict[k] = entry[k];
+    if (await saveDictionary(dict)) {
+      $("#dict-key").value = "";
+      $("#dict-val").value = "";
+      $("#dict-key").focus();
+    }
+  };
+  $("#dict-add").addEventListener("click", addWord);
+  for (const id of ["#dict-key", "#dict-val"]) {
+    $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") addWord(); });
+  }
   $("#dict-list").addEventListener("click", async (e) => {
     const key = e.target?.dataset?.del;
     if (!key) return;
-    const { customDictionary } = await loadState();
-    delete customDictionary[key];
-    await update({ customDictionary });
+    const dict = sanitizeDictionary((await loadState()).customDictionary);
+    delete dict[key];
+    await saveDictionary(dict);
+  });
+  $("#site-list").addEventListener("click", async (e) => {
+    const host = e.target?.dataset?.site;
+    if (!host) return;
+    const sites = sanitizeSites((await loadState()).disabledSites).filter((h) => h !== host);
+    await update({ disabledSites: sites });
+  });
+  $("#learned-clear").addEventListener("click", async () => {
+    await chrome.storage.local.set({ learned: {} });
+    await paintLocal();
   });
 
   // Shortcuts
@@ -124,89 +252,78 @@ function bindControls() {
   // Backup
   $("#export-btn").addEventListener("click", async () => {
     const state = await loadState();
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
+    const backup = { app: "se-banglish-avro", version: chrome.runtime.getManifest().version, ...state };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" }));
     const a = document.createElement("a");
-    a.href = url; a.download = `se-banglish-settings-${Date.now()}.json`;
-    a.click(); URL.revokeObjectURL(url);
+    a.href = url;
+    a.download = `se-banglish-settings-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
   $("#import-file").addEventListener("change", async (e) => {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
-    const txt = await file.text();
+    const hint = $("#import-hint");
     try {
-      const data = JSON.parse(txt);
-      await chrome.storage.sync.set({ ...DEFAULTS, ...data });
-      paint(await loadState());
-    } catch (_) {
-      alert("Invalid backup file.");
+      const settings = sanitizeSettings(JSON.parse(await file.text()));
+      if (Object.keys(settings).length === 0) throw new Error("no settings found in this file");
+      if (settings.customDictionary && byteSize(settings.customDictionary) > DICT_BYTE_LIMIT) {
+        throw new Error("the dictionary in this file is larger than Chrome Sync allows (about 8 KB)");
+      }
+      await update(settings);
+      const words = Object.keys(settings.customDictionary || {}).length;
+      hint.textContent = `Imported — ${words.toLocaleString()} custom ${words === 1 ? "word" : "words"} restored.`;
+    } catch (err) {
+      hint.textContent = "Import failed: " + (err?.message || "invalid backup file") + ".";
     }
   });
   $("#reset-btn").addEventListener("click", async () => {
     if (!confirm("Reset all settings to defaults? Your custom dictionary will be kept.")) return;
-    const { customDictionary } = await loadState();
+    const customDictionary = sanitizeDictionary((await loadState()).customDictionary);
     await chrome.storage.sync.clear();
-    await chrome.storage.sync.set({ ...DEFAULTS, customDictionary });
-    paint(await loadState());
+    await update({ ...DEFAULTS, customDictionary });
   });
 
-  // Try box — replicate simple word-commit for demo
+  // "Try it" box — the same engine and dictionary the content script uses.
   const tryEl = $("#try-input");
   tryEl.addEventListener("keydown", (e) => {
-    if (e.key !== " " && e.key !== "Enter") return;
+    if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+    const endsWord = e.key === "Enter" || (e.key.length === 1 && !E.isWordChar(e.key));
+    if (!endsWord) return;
     const val = tryEl.value;
     const pos = tryEl.selectionStart;
     let start = pos;
-    while (start > 0 && /[A-Za-z^:0-9]/.test(val[start - 1])) start--;
+    while (start > 0 && E.isWordChar(val[start - 1])) start--;
     const word = val.slice(start, pos);
-    if (!word || !/[A-Za-z]/.test(word)) return;
-    // Reuse background-injected engine via a light local port: use fetch of core.json + inline transliterate
-    tryTranslit(word).then((bn) => {
-      if (!bn || bn === word) return;
-      tryEl.value = val.slice(0, start) + bn + val.slice(pos);
-      const caret = start + bn.length;
-      tryEl.setSelectionRange(caret, caret);
-    });
+    if (!word || !E.hasLetter(word)) return;
+    const bn = E.transliterate(word);
+    if (!bn || bn === word) return;
+    tryEl.setSelectionRange(start, pos);
+    if (!document.execCommand("insertText", false, bn)) tryEl.setRangeText(bn, start, pos, "end");
   });
 }
 
-// Minimal local transliterator for the "Try it" box, mirrors content engine.
-let _dict = null;
-async function ensureDict() {
-  if (_dict) return _dict;
+async function loadEngineDictionary() {
   try {
     const res = await fetch(chrome.runtime.getURL("dictionary/core.json"));
-    _dict = await res.json();
-  } catch { _dict = {}; }
-  return _dict;
-}
-
-const CONSONANTS = { "kh":"খ","gh":"ঘ","Ng":"ঙ","ch":"চ","jh":"ঝ","NG":"ঞ","Th":"ঠ","Dh":"ঢ","th":"থ","dh":"ধ","ph":"ফ","bh":"ভ","sh":"শ","Sh":"ষ","ss":"স","Rh":"ঢ়","k":"ক","g":"গ","c":"চ","j":"জ","T":"ট","D":"ড","N":"ণ","t":"ত","d":"দ","n":"ন","p":"প","f":"ফ","b":"ব","v":"ভ","m":"ম","z":"জ","y":"য়","l":"ল","s":"স","h":"হ","R":"ড়","Y":"য়","w":"ওয়","ng":"ং" };
-const VOWELS = { "rri":{ind:"ঋ",kar:"ৃ"},"OI":{ind:"ঐ",kar:"ৈ"},"oi":{ind:"ঐ",kar:"ৈ"},"OU":{ind:"ঔ",kar:"ৌ"},"ou":{ind:"ঔ",kar:"ৌ"},"aa":{ind:"আ",kar:"া"},"A":{ind:"আ",kar:"া"},"a":{ind:"আ",kar:"া"},"I":{ind:"ঈ",kar:"ী"},"ii":{ind:"ঈ",kar:"ী"},"i":{ind:"ই",kar:"ি"},"U":{ind:"ঊ",kar:"ূ"},"uu":{ind:"ঊ",kar:"ূ"},"u":{ind:"উ",kar:"ু"},"E":{ind:"এ",kar:"ে"},"e":{ind:"এ",kar:"ে"},"O":{ind:"ও",kar:"ো"},"o":{ind:"অ",kar:""} };
-const SYMBOLS = { "^":"ঁ",":":"ঃ" };
-const TOKENS = [...Object.keys(VOWELS), ...Object.keys(CONSONANTS), ...Object.keys(SYMBOLS), "rr", "r"].sort((a, b) => b.length - a.length);
-
-async function tryTranslit(latin) {
-  const dict = await ensureDict();
-  const key = latin.toLowerCase();
-  if (dict[key]) return dict[key];
-  let i = 0, out = "", prev = "start";
-  while (i < latin.length) {
-    let m = null;
-    for (const t of TOKENS) if (latin.startsWith(t, i)) { m = t; break; }
-    if (!m) { out += latin[i++]; prev = "other"; continue; }
-    i += m.length;
-    if (m === "rr") { out += "র্"; prev = "ref"; continue; }
-    if (m === "r") { out += prev === "consonant" ? "্র" : "র"; prev = "consonant"; continue; }
-    if (VOWELS[m]) { const v = VOWELS[m]; out += (prev === "consonant" || prev === "ref") ? v.kar : v.ind; prev = "vowel"; continue; }
-    if (CONSONANTS[m]) { const c = CONSONANTS[m]; if (m === "ng") { out += c; prev = "vowel"; continue; } out += prev === "consonant" ? "্" + c : c; prev = "consonant"; continue; }
-    if (SYMBOLS[m]) { out += SYMBOLS[m]; continue; }
+    E.setDictionary(await res.json());
+    const lex = await fetch(chrome.runtime.getURL("dictionary/lexicon.txt"));
+    if (lex.ok) E.setLexicon(await lex.text());
+  } catch (_) {
+    // the rule-based engine still works without them
   }
-  return out;
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
+  $("#version").textContent = "Version " + chrome.runtime.getManifest().version;
   bindNav();
   bindControls();
+  loadEngineDictionary();
   paint(await loadState());
+  await paintLocal();
+  chrome.storage.onChanged.addListener(async (_changes, area) => {
+    if (area === "sync") paint(await loadState());
+    else if (area === "local") paintLocal();
+  });
 });

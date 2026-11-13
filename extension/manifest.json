@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "SE Banglish Avro for Chrome",
   "short_name": "SE Banglish",
-  "version": "3.1.1",
-  "description": "Type Bangla anywhere on the web with Avro-style phonetic transliteration. Fast, minimal, Apple-inspired.",
+  "version": "3.4.0",
+  "description": "Type Bangla anywhere on the web with Avro-style phonetic transliteration. Fast, private, works offline.",
   "action": {
     "default_popup": "popup/popup.html",
     "default_icon": {
@@ -26,26 +26,30 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content/content.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "lib/engine.js",
+        "content/content.js"
+      ],
       "run_at": "document_start",
       "all_frames": true,
       "match_about_blank": true,
       "match_origin_as_fallback": true
     }
   ],
-
   "options_ui": {
     "page": "options/options.html",
     "open_in_tab": true
   },
-  "permissions": ["storage", "contextMenus", "activeTab", "scripting"],
-  "host_permissions": ["<all_urls>"],
-  "web_accessible_resources": [
-    {
-      "resources": ["dictionary/core.json", "icons/*.png"],
-      "matches": ["<all_urls>"]
-    }
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
   ],
   "commands": {
     "toggle-banglish": {
@@ -61,5 +65,6 @@
         "mac": "Command+Shift+B"
       }
     }
-  }
+  },
+  "minimum_chrome_version": "111"
 }

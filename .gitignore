@@ -30,3 +30,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# editor compatibility tests
+tests/editors/node_modules
+tests/editors/dist
+tests/editors/package-lock.json

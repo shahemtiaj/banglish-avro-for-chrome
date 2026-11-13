@@ -69,7 +69,7 @@ export function TryDemo() {
       }
       if (e.key === "Escape")    { e.preventDefault(); setFocused(false); (e.target as HTMLInputElement).blur(); return; }
     }
-    if (e.key === " " || /^[.,!?;:।]$/.test(e.key)) {
+    if (e.key === " " || /^[.,!?;।]$/.test(e.key)) {
       const punct = e.key === "." ? "।" : e.key;
       if (curWord && /[A-Za-z]/.test(curWord)) {
         const bn = transliterate(curWord);

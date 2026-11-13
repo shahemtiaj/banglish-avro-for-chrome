@@ -48,13 +48,20 @@
               </div>
             </div>
             <div class="row">
-              <div class="row-label"><span class="label">Remember last language</span><span class="hint">Restore last mode when opening new tabs</span></div>
+              <div class="row-label"><span class="label">Remember last language</span><span class="hint">Keep the Bangla / English choice after restarting Chrome</span></div>
               <label class="switch"><input type="checkbox" data-setting="rememberLastLanguage"/><span class="track"><span class="thumb"></span></span></label>
             </div>
             <div class="row">
               <div class="row-label"><span class="label">Floating status indicator</span><span class="hint">Show a small pill on the page when language changes</span></div>
               <label class="switch"><input type="checkbox" data-setting="floatingIndicator"/><span class="track"><span class="thumb"></span></span></label>
             </div>
+          </div>
+          <div class="card">
+            <div class="card-head list-head">
+              <strong>Sites where typing is switched off</strong>
+              <span class="small muted">Switch a site off from the toolbar popup</span>
+            </div>
+            <div class="dict-list" id="site-list"></div>
           </div>
         </section>
 
@@ -69,12 +76,16 @@
               <label class="switch"><input type="checkbox" data-setting="candidateWindow"/><span class="track"><span class="thumb"></span></span></label>
             </div>
             <div class="row">
-              <div class="row-label"><span class="label">Auto correction</span><span class="hint">Use the dictionary to fix common typos</span></div>
+              <div class="row-label"><span class="label">Auto correction</span><span class="hint">Use the built-in dictionary for correct spellings (পৃথিবী instead of প্রিথিবি)</span></div>
               <label class="switch"><input type="checkbox" data-setting="autoCorrect"/><span class="track"><span class="thumb"></span></span></label>
             </div>
             <div class="row">
-              <div class="row-label"><span class="label">Auto space</span><span class="hint">Automatically add a space after each committed word</span></div>
+              <div class="row-label"><span class="label">Auto space</span><span class="hint">Add a space after picking a word from the suggestion window</span></div>
               <label class="switch"><input type="checkbox" data-setting="autoSpace"/><span class="track"><span class="thumb"></span></span></label>
+            </div>
+            <div class="row">
+              <div class="row-label"><span class="label">Bangla numerals</span><span class="hint">Type ০ ১ ২ ৩ instead of 0 1 2 3 while in Bangla mode</span></div>
+              <label class="switch"><input type="checkbox" data-setting="banglaDigits"/><span class="track"><span class="thumb"></span></span></label>
             </div>
             <div class="row">
               <div class="row-label"><span class="label">Layout</span><span class="hint">Phonetic keyboard layout in use</span></div>
@@ -108,8 +119,15 @@
               <button class="btn primary" id="dict-add">Add</button>
             </div>
           </div>
+          <p class="small form-error" id="dict-error" role="alert" hidden></p>
           <div class="card">
             <div class="dict-list" id="dict-list"></div>
+          </div>
+          <div class="card">
+            <div class="row">
+              <div class="row-label"><span class="label">Learned choices</span><span class="hint" id="learned-hint">Words you picked from the suggestion window are remembered on this device</span></div>
+              <button class="btn" id="learned-clear">Clear</button>
+            </div>
           </div>
         </section>
 
@@ -158,7 +176,7 @@
               <button class="btn" id="export-btn">Export</button>
             </div>
             <div class="row">
-              <div class="row-label"><span class="label">Import settings</span><span class="hint">Restore from a previously exported file</span></div>
+              <div class="row-label"><span class="label">Import settings</span><span class="hint" id="import-hint">Restore from a previously exported file</span></div>
               <label class="btn" for="import-file">Import
                 <input type="file" id="import-file" accept="application/json" hidden />
               </label>
@@ -195,18 +213,19 @@
             <p>SE Banglish Avro for Chrome</p>
           </header>
           <div class="card about-card">
-            <div class="hstack" style="gap:14px">
-              <span class="brand-logo" style="width:52px;height:52px;font-size:26px" aria-hidden="true">অ</span>
+            <div class="hstack about-head">
+              <span class="brand-logo about-logo" aria-hidden="true">অ</span>
               <div class="stack">
-                <strong style="font-size:16px">SE Banglish Avro</strong>
-                <span class="small muted">Version 3.1.1</span>
+                <strong class="about-name">SE Banglish Avro</strong>
+                <span class="small muted" id="version"></span>
               </div>
             </div>
-            <p style="margin-top:12px">
+            <p class="about-text">
               A fast, minimal Avro-style phonetic Bangla typing extension. Type English letters and get beautiful Bangla text anywhere on the web.
             </p>
-            <p class="small muted" style="margin-top:10px">Made with love by <a href="https://shahemtiaj.com" target="_blank" rel="noopener">Shah Emtiaj</a></p>
-            <div class="hstack" style="margin-top:14px; gap:8px">
+            <p class="small muted about-credit">Made with love by <a href="https://shahemtiaj.com" target="_blank" rel="noopener">Shah Emtiaj</a></p>
+            <p class="small muted about-credit">Bangla word list derived from the Avro Phonetic dictionary, © <a href="https://www.omicronlab.com/" target="_blank" rel="noopener">OmicronLab</a>, used under the <a href="https://mozilla.org/MPL/2.0/" target="_blank" rel="noopener">Mozilla Public License 2.0</a>.</p>
+            <div class="hstack about-links">
               <a class="btn" href="https://github.com/shahemtiaj" target="_blank" rel="noopener">GitHub</a>
               <a class="btn" href="https://facebook.com/shahemtiaj" target="_blank" rel="noopener">Facebook</a>
             </div>
@@ -214,6 +233,7 @@
         </section>
       </main>
     </div>
+    <script src="../lib/engine.js"></script>
     <script src="options.js" type="module"></script>
   </body>
 </html>
