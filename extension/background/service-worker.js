@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS = {
   autoSpace: false,
   rememberLastLanguage: true,
   floatingIndicator: true,
+  banglaDigits: false,
   theme: "system", // "light" | "dark" | "system"
   layout: "avro",
   customDictionary: {},

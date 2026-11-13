@@ -1,5 +1,20 @@
 # Changelog
 
+## 3.4.0
+
+### Chat-style typing
+- The way people really type in Messenger now converts: `korsi` → করছি, `bolse` → বলছে, `bolsilo` → বলছিল, `kortesi` → করতেছি, `gese` → গেছে, `khaisi` → খাইছি, `hoise` → হইছে. Real words that end the same way (`ase` → আসে, `bose` → বসে, `hasi` → হাসি) are left alone, with the ছ reading offered as the second choice (`ase` → আছে).
+- About 200 shorthand and everyday chat words: `tmi`, `amr`, `tmr`, `kmn`, `hbe`, `jbo`, `vlo`, `ekhn`, `plz`, `thnx`, `dimu`, `jamu` …
+
+### More suggestions
+- Names and words the dictionary does not know now get alternative spellings in the suggestion window: স / শ, ত / ট, দ / ড, ন / ণ, ি / ী (`sakib` → সাকিব · শাকিব, `rashed` → রাশেদ · রাসেদ · রাশেড).
+
+### Fixes
+- **Mac:** Option + number did not pick a suggestion (macOS reports Option + 1 as "¡"). Ctrl / Option + 1–9 now work on every keyboard.
+
+### New option
+- **Bangla numerals** (Settings → Typing): type ০ ১ ২ ৩ instead of 0 1 2 3 while in Bangla mode. Off by default.
+
 ## 3.3.0
 
 ### Works on more sites

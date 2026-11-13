@@ -643,6 +643,29 @@
     return null;
   }
 
+  // Everyday chat spelling writes ছ as "s": korsi, bolse, kortesi, ase.
+  // Returns the careful spelling (korchi, bolche, kortechi, ache) or "".
+  const CHAT_ENDING = /^([a-z]*[a-rt-z])s(i|e|o|en|is|ilo|ilam|ile|ilen)$/;
+  function chatVariant(key) {
+    const m = CHAT_ENDING.exec(key);
+    return m && m[1].length >= 1 ? m[1] + "ch" + m[2] : "";
+  }
+  const CHAT_CONTINUOUS = /tes(i|e|o|en|is|ilo|ilam|ile|ilen)$/; // kortesi, jaitese
+
+  // Spellings a typist may have meant by the same keys: ত/ট, দ/ড, স/শ, ি/ী.
+  // Used only to offer extra choices for names and unknown words.
+  function letterVariants(latin) {
+    const out = [];
+    const swap = (re, to) => { if (re.test(latin)) out.push(latin.replace(re, to)); };
+    swap(/s(?!h)/, "sh");
+    swap(/sh/, "s");
+    swap(/t(?!h)/, "T");
+    swap(/d(?!h)/, "D");
+    swap(/i$/, "I");
+    swap(/n(?=[aeiou]|$)(?!.*n)/, "N");
+    return out;
+  }
+
   // A sound match becomes the default only if it differs from the typing by
   // less than one real letter (dropped vowels, doubling, y / w).
   const SOUND_LIMIT = 0.9;
@@ -656,6 +679,8 @@
       if (dictionary[key]) return { text: dictionary[key], source: "dict" };
       const stemmed = withSuffix(key, (stem) => customDict[stem] || dictionary[stem]);
       if (stemmed) return { text: stemmed, source: "stem" };
+      const chat = chatVariant(key);
+      if (chat && dictionary[chat]) return { text: dictionary[chat], source: "dict" };
       // Very short typing matches too many words by sound to guess safely.
       if (key.length >= 3) {
         const matches = soundMatches(latin);
@@ -666,6 +691,12 @@
           return m.length && m[0].distance <= 0.5 ? m[0].word : null;
         }, 3);
         if (built) return { text: built, source: "stem" };
+        if (chat) {
+          // nothing is spelled this way with স; try it as ছ (bolsilo → বলছিল)
+          const m = soundMatches(chat);
+          if (m.length && m[0].distance <= 0.5) return { text: m[0].word, source: "sound" };
+          if (CHAT_CONTINUOUS.test(key)) return { text: phonetic(chat), source: "rule" };
+        }
       }
     }
     return { text: phonetic(latin), source: "rule" };
@@ -712,6 +743,9 @@
     add(primary.text);
     if (customDict[key]) add(customDict[key]);
     if (dictionary[key]) add(dictionary[key]);
+    // the careful spelling of a chat-style ending: ase → আছে next to আসে
+    const chat = options.autoCorrect ? chatVariant(key) : "";
+    if (chat) add(customDict[chat] || dictionary[chat] || (key.length >= 4 ? phonetic(chat) : ""));
 
     const sounds = soundMatches(latin);
     for (let i = 0; i < sounds.length && i < 4; i++) { if (sounds[i].distance <= 0.5) add(sounds[i].word); }
@@ -723,11 +757,14 @@
     for (const k of prefixHits(customKeys, key, room)) push(customDict[k]);
     for (const k of prefixHits(dictKeys, key, room)) push(dictionary[k]);
     for (const w of soundCompletions(latin, room)) push(w);
-    const variants = [phonetic(latin, { riKar: true }), phonetic(latin, { finalO: true }), phonetic(latin, { loose: true })]
-      .filter((v) => !out.includes(v));
+    const variants = [phonetic(latin, { riKar: true }), phonetic(latin, { finalO: true })]
+      .concat(letterVariants(latin).map((v) => phonetic(v)), [phonetic(latin, { loose: true })])
+      .filter((v, i, all) => !out.includes(v) && all.indexOf(v) === i);
 
-    // Keep one slot for a spelling variant when the word is not a known one.
-    const keepVariant = primary.source === "rule" && variants.length ? 1 : 0;
+    // Words the dictionary does not know (names, mostly) keep room for other
+    // spellings; known words keep one.
+    const known = primary.source !== "rule";
+    const keepVariant = Math.min(variants.length, known ? 1 : 4);
     for (const c of completions) { if (out.length >= max - 1 - keepVariant) break; add(c); }
     for (const v of variants) { if (out.length >= max - 1) break; add(v); }
     for (const c of completions) { if (out.length >= max - 1) break; add(c); }

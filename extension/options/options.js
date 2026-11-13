@@ -9,13 +9,14 @@ const DEFAULTS = {
   autoSpace: false,
   rememberLastLanguage: true,
   floatingIndicator: true,
+  banglaDigits: false,
   theme: "system",
   layout: "avro",
   customDictionary: {},
   disabledSites: [],
 };
 const DEFAULT_STATS = { wordsTyped: 0, charsTyped: 0, bnWords: 0, enWords: 0 };
-const BOOLEAN_KEYS = ["enabled", "candidateWindow", "autoCorrect", "autoSpace", "rememberLastLanguage", "floatingIndicator"];
+const BOOLEAN_KEYS = ["enabled", "candidateWindow", "autoCorrect", "autoSpace", "rememberLastLanguage", "floatingIndicator", "banglaDigits"];
 // chrome.storage.sync allows 8 KB per item; leave headroom for the key itself.
 const DICT_BYTE_LIMIT = 7800;
 

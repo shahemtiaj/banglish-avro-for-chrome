@@ -47,7 +47,7 @@ Click the button below and install in one click:
 | Convert the word | `Space`, `Enter`, or any punctuation |
 | Move through suggestions | `↓` / `↑` |
 | Take the highlighted suggestion | `Tab`, or `Space` / `Enter` after moving the selection |
-| Take suggestion number *n* | `Alt + n` |
+| Take suggestion number *n* | `Ctrl + n` or `Alt` / `Option + n` |
 | Close the suggestion window | `Esc` |
 | Reopen the word you just converted | `Backspace` |
 | Bengali dari (।) | `.` after a word — type `.` again for `..` / `...`; decimals like `3.5` stay as they are |

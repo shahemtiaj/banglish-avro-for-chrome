@@ -180,6 +180,36 @@ try {
     await setSync({ language: "bn" });
     await page.waitForTimeout(200);
   });
+  await check("chat-style spelling converts", async () => {
+    await clear("text");
+    await type("tmi ki korsi bolsilo ");
+    assert.equal(await value("text"), "তুমি কি করছি বলছিল ");
+  });
+  await check("Alt + number picks a candidate (by physical key, as on a Mac)", async () => {
+    await clear("text");
+    await type("ase");
+    const second = (await panel()).items[1];
+    await page.keyboard.press("Alt+Digit2");
+    assert.equal(await value("text"), second);
+    assert.equal(second, "আছে");
+    await worker.evaluate(() => chrome.storage.local.set({ learned: {} }));
+    await page.waitForTimeout(150);
+  });
+  await check("Bangla numerals option", async () => {
+    await setSync({ banglaDigits: true });
+    await page.waitForTimeout(200);
+    await clear("text");
+    await type("ami 25 taka, 3.5 taka ");
+    assert.equal(await value("text"), "আমি ২৫ টাকা, ৩.৫ টাকা ");
+    await clear("rich");
+    await type("taka 100 ");
+    assert.equal(norm(await value("rich")), "টাকা ১০০ ");
+    await setSync({ banglaDigits: false });
+    await page.waitForTimeout(200);
+    await clear("text");
+    await type("25 ");
+    assert.equal(await value("text"), "25 ");
+  });
   await check("per-site switch turns typing off", async () => {
     await setSync({ disabledSites: ["127.0.0.1"] });
     await page.waitForTimeout(200);

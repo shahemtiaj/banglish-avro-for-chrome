@@ -45,6 +45,7 @@
     autoCorrect: true,
     autoSpace: false,
     floatingIndicator: true,
+    banglaDigits: false,
     theme: "system",
     customDictionary: {},
     disabledSites: [],
@@ -590,6 +591,7 @@
     return true;
   }
 
+  const BANGLA_DIGITS = "০১২৩৪৫৬৭৮৯";
   const MODIFIER_KEYS = new Set(["Shift", "Control", "Alt", "Meta", "CapsLock", "AltGraph"]);
 
   function onKeyDown(e) {
@@ -623,13 +625,27 @@
       // word and still reaches the page, so one Enter sends a chat message.
       if (!mod && (key === "Tab" || (key === "Enter" && panel.index > 0))) { consume(e); commitPanel(panel.index); return; }
       if (key === "Escape") { consume(e); hidePanel(); return; }
-      if (/^[1-9]$/.test(key) && mod) {
-        const idx = parseInt(key, 10) - 1;
+      // Ctrl / Alt + number picks that candidate. e.code, because on a Mac
+      // Option + 1 reports the key as "¡", not "1".
+      const digit = /^Digit([1-9])$/.exec(e.code || "");
+      if (digit && (e.ctrlKey || e.altKey) && !e.metaKey) {
+        const idx = parseInt(digit[1], 10) - 1;
         if (idx < panel.items.length) { consume(e); commitPanel(idx); return; }
       }
     }
 
     if (mod && key !== "Enter") return; // leave keyboard shortcuts alone
+
+    // Optional Bangla numerals: a digit typed outside a Latin word is written
+    // as ০-৯ straight away.
+    if (settings.banglaDigits && /^[0-9]$/.test(key)) {
+      const info = getWordBeforeCaret(el);
+      if (info && !E.hasLetter(info.text)) {
+        replaceRange(el, { start: info.end, end: info.end, node: info.node }, BANGLA_DIGITS[key]);
+        consume(e);
+        return;
+      }
+    }
 
     // Any key that ends a word converts it: space, Enter, Tab and punctuation.
     const endsWord = key === "Enter" || key === "Tab" || (key.length === 1 && !E.isWordChar(key));

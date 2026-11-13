@@ -156,6 +156,35 @@ test("word list file is sorted and consistent with the engine", () => {
   }
 });
 
+test("chat-style spelling and shorthand", () => {
+  E.setDictionary(dict);
+  E.setLexicon(lexicon);
+  E.setCustomDictionary({});
+  E.setLearned({});
+  E.setOptions({ autoCorrect: true });
+  const want = {
+    korsi: "করছি", bolse: "বলছে", dekhsi: "দেখছি", bolsilo: "বলছিল", korsilam: "করছিলাম",
+    kortesi: "করতেছি", jaitesi: "যাইতেছি", gese: "গেছে", khaisi: "খাইছি", hoise: "হইছে",
+    tmi: "তুমি", amr: "আমার", kmn: "কেমন", hbe: "হবে", jbo: "যাব", vlo: "ভালো", plz: "প্লিজ",
+    // real words that happen to end the same way are left alone
+    ase: "আসে", bose: "বসে", hasi: "হাসি", hese: "হেসে",
+  };
+  for (const [latin, bangla] of Object.entries(want)) assert.equal(E.transliterate(latin), bangla, latin);
+  assert.equal(E.suggest("ase")[1], "আছে", "the ছ reading is the second choice");
+  assert.equal(E.suggest("asi")[1], "আছি");
+});
+
+test("names get alternative spellings", () => {
+  E.setDictionary(dict);
+  E.setLexicon(lexicon);
+  assert.ok(E.suggest("sakib").includes("শাকিব"));
+  assert.ok(E.suggest("rashed").includes("রাসেদ"));
+  const s = E.suggest("tasdid");
+  assert.ok(s.length >= 4 && s.length <= 9, "unknown words still get several spellings");
+  assert.equal(s[s.length - 1], "tasdid");
+  assert.equal(new Set(s).size, s.length);
+});
+
 test("stays fast", () => {
   E.setDictionary(dict);
   E.setLexicon(lexicon);
